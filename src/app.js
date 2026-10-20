@@ -118,6 +118,8 @@ export class TeltonikaApp {
     this.inFlight = null;
     /** When the last reboot was sent (ms), mirrored in /data. */
     this.lastRebootAt = 0;
+    /** The last pause asked by the router { key, until }, in memory (a /data that cannot be written). */
+    this.pauseMemory = null;
     /** Until then, a failing reading is the reboot that was sent. */
     this.rebootingUntil = 0;
     this.reset();
@@ -163,12 +165,13 @@ export class TeltonikaApp {
   /**
    * (Re)start with a configuration. Calls are serialized. `force`: the user
    * saved the configuration: credentials refused earlier are tried again, a
-   * new certificate is accepted. `immediate`: read now even within the retry
-   * wait of a failure (the test button); neither lifts a pause asked by the
-   * router.
+   * new certificate is accepted, and the router is read at once even within
+   * the retry wait of a failure. Nothing else (a reconnection to Gladys, the
+   * test button) reads faster than the interval, nor lifts a pause asked by
+   * the router.
    */
-  start(rawConfig, { force = false, immediate = false } = {}) {
-    return this.enqueue(() => this.run(rawConfig, { force, immediate }));
+  start(rawConfig, { force = false } = {}) {
+    return this.enqueue(() => this.run(rawConfig, { force }));
   }
 
   /** `host:port` of the router: the key of its refusal, pause, certificate. */
@@ -226,12 +229,14 @@ export class TeltonikaApp {
     this.client = null;
   }
 
-  async run(rawConfig, { force = false, immediate = false } = {}) {
+  async run(rawConfig, { force = false } = {}) {
     this.halt();
     this.dropClient();
     const generation = ++this.generation;
     this.rawConfig = rawConfig ?? {};
     const config = normalizeConfig(rawConfig);
+    // A pause known in memory (even if /data could not keep it) outlives the restart.
+    const memoryPause = this.pauseMemory;
     this.config = config;
     this.reset();
     // The core keeps the status and Discovery in memory: a start (a
@@ -276,6 +281,9 @@ export class TeltonikaApp {
       this.logger.info('A new HTTPS certificate of the router will be accepted');
     }
     this.lastRebootAt = Number(this.store.get('meta', this.rebootKey())) || 0;
+    // A reboot "in the future" (a clock set back, a file written by hand)
+    // counts as one now: at most 10 min of cooldown, never none.
+    if (this.lastRebootAt > this.now()) this.lastRebootAt = this.now();
 
     this.client = new TeltonikaClient({
       protocol: config.protocol,
@@ -295,7 +303,8 @@ export class TeltonikaApp {
     // A pause (HTTP 429 or 5xx) outlives a restart, a reconnection to Gladys
     // and a saved configuration; its end is capped (a clock jump, a file
     // written by hand) and the capped end written back.
-    const stored = Number(this.store.get('meta', this.pauseKey())) || 0;
+    let stored = Number(this.store.get('meta', this.pauseKey())) || 0;
+    if (memoryPause?.key === this.pauseKey()) stored = Math.max(stored, memoryPause.until);
     const pausedUntil = Math.min(stored, this.now() + INTERVALS.BUSY_MAX_MS);
     if (pausedUntil < stored) await this.store.set('meta', this.pauseKey(), String(pausedUntil));
     if (this.now() < pausedUntil) {
@@ -308,10 +317,10 @@ export class TeltonikaApp {
       return;
     }
     // After a failed reading, a reconnection to Gladys waits for the retry
-    // like the loop would (never faster than the interval); the button and a
-    // saved configuration read at once.
+    // like the loop would (never faster than the interval), and so does the
+    // test button; only a saved configuration reads at once.
     const waiting = this.retryWait;
-    if (!force && !immediate && waiting?.key === configKey) {
+    if (!force && waiting?.key === configKey) {
       if (this.now() < waiting.at) {
         this.retryDelay = waiting.delay;
         await this.restoreKnown();
@@ -372,6 +381,8 @@ export class TeltonikaApp {
 
   /** Stopped before any request (configuration, refusal, certificate): status and badges. */
   async stopWith(message) {
+    // Discovery too: the core forgets it at every reconnection (the router alone).
+    await this.publishDiscovered();
     await this.publishTransports();
     await this.setStatus(false, message);
   }
@@ -414,6 +425,11 @@ export class TeltonikaApp {
 
   async loop(generation, epoch) {
     if (!this.current(generation, epoch)) return;
+    if (this.paused()) {
+      // A pause met on another path (a command): no reading before its end.
+      this.scheduleLoop(this.pausedUntil - this.now(), generation);
+      return;
+    }
     if (this.reading) {
       // A reading is in flight (Discovery, a command): it is this round's.
       await this.reading.catch(() => {});
@@ -445,6 +461,7 @@ export class TeltonikaApp {
       return 0;
     }
     this.pausedUntil = this.now() + delay;
+    this.pauseMemory = { key: this.pauseKey(), until: this.pausedUntil };
     await this.store.set('meta', this.pauseKey(), String(this.pausedUntil));
     return delay;
   }
@@ -577,6 +594,7 @@ export class TeltonikaApp {
     if (stale()) return;
     const at = this.now();
     // A pause asked earlier is over (the reading worked): forget it.
+    this.pauseMemory = null;
     if (this.store.get('meta', this.pauseKey())) {
       await this.store.set('meta', this.pauseKey(), null);
       if (stale()) return;
@@ -836,9 +854,28 @@ export class TeltonikaApp {
       throw new Error(T.errors.notConnected);
     }
     if (this.paused()) throw new Error(T.errors.paused(this.pausedUntil - this.now()));
+    // A reboot "in the future" (a clock set back) counts as one now: at most
+    // 10 min of cooldown, never none.
+    if (this.lastRebootAt > this.now()) this.lastRebootAt = this.now();
     const ago = this.now() - this.lastRebootAt;
-    // A time in the future (a clock set back) does not block for ever.
-    if (ago >= 0 && ago < COMMAND.COOLDOWN_MS) throw new Error(T.errors.cooldown(ago));
+    if (ago < COMMAND.COOLDOWN_MS) throw new Error(T.errors.cooldown(ago));
+  }
+
+  /**
+   * A failure met by the command that the loop must follow at once (refused
+   * credentials, another certificate, HTTP 429 / 5xx): the usual path,
+   * persisted, the loop stopped or paused. In the background: its
+   * synchronous start already halts the loop, and the ack never waits for
+   * Gladys.
+   */
+  followFailure(err, generation) {
+    const pause = err?.code === CODES.HTTP && (err.status === 429 || err.status >= 500);
+    const final = isCredentialsRefused(err) || (err?.code === CODES.CERTIFICATE && err.fingerprint);
+    if (!pause && !final) return;
+    /** The failure being followed (the tests wait for it). */
+    this.following = this.failed(err, generation).catch((e) =>
+      this.logger.warn(`Failure not handled: ${e?.message}`),
+    );
   }
 
   async reboot(received) {
@@ -854,11 +891,9 @@ export class TeltonikaApp {
     try {
       fresh = await client.deviceStatus(received + COMMAND.READ_BY_MS);
     } catch (err) {
+      this.followFailure(err, generation);
       if (err?.code === CODES.LATE || err?.code === CODES.TIMEOUT) {
         throw new Error(T.errors.tooSlow, { cause: err });
-      }
-      if (await this.pauseFor(err)) {
-        this.setStatus(false, T.status.paused(this.pausedUntil - this.now())).catch(() => {});
       }
       throw new Error(T.errors.unknownState(reasonOf(err).en), { cause: err });
     }
@@ -873,8 +908,13 @@ export class TeltonikaApp {
       await client.reboot({
         sendBy,
         answerBy: received + COMMAND.ANSWER_BY_MS,
-        // The very last check, right before the request is written.
-        beforeSend: () => this.checkReboot(generation, client),
+        // The very last check, right before the request is written (after
+        // the TCP and TLS handshakes): the option, the connection, a pause,
+        // the cooldown, and the deadline.
+        beforeSend: () => {
+          this.checkReboot(generation, client);
+          if (this.now() > sendBy) throw new Error(T.errors.tooSlow);
+        },
       });
     } catch (err) {
       if (err?.beforeSend) throw err;
@@ -883,12 +923,11 @@ export class TeltonikaApp {
         `Reboot of the router: ${err?.name === 'RouterError' ? err.message : 'error'}`,
       );
       const cause = { cause: err };
+      this.followFailure(err, generation);
+      if (err?.noSession) throw new Error(T.errors.noSession, cause);
       if (err?.code === CODES.LATE) throw new Error(T.errors.tooSlow, cause);
       if (err?.notSent) throw new Error(T.errors.notSent(reason), cause);
-      if (err?.status === 429) {
-        await this.pauseFor(err);
-        throw new Error(T.errors.refused(reason), cause);
-      }
+      if (err?.status === 429) throw new Error(T.errors.refused(reason), cause);
       if (
         err?.code === CODES.ACCESS ||
         err?.code === CODES.API_ERROR ||
@@ -926,15 +965,14 @@ export class TeltonikaApp {
   }
 
   /**
-   * Reconnects, then reports, within 25 s. Refused credentials are not tried
-   * again (only saving the configuration does), nor is a pause shortened.
+   * Reconnects, then reports, within 25 s. Like a reconnection to Gladys, it
+   * never reads faster than the interval: after a failure it answers the
+   * status of that failure until the retry. Refused credentials are not
+   * tried again (only saving the configuration does), nor is a pause
+   * shortened.
    */
   async testConnection() {
-    await this.within(
-      this.start(this.rawConfig, { immediate: true }),
-      TEST_BUDGET_MS,
-      T.errors.testTooLong,
-    );
+    await this.within(this.start(this.rawConfig), TEST_BUDGET_MS, T.errors.testTooLong);
     if (!this.online) {
       const message = this.lastStatus ? JSON.parse(this.lastStatus)[1] : null;
       throw new Error(message?.en ?? T.errors.notConnected);

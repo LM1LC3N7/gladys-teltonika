@@ -133,3 +133,27 @@ test('a closed client sends nothing', async () => {
   await assert.rejects(c.modems(), (err) => err.code === CODES.CLOSED && err.notSent);
   assert.equal(router.requests.length, 0);
 });
+
+test('M2 single flight: two readings that need a new token share one login', async () => {
+  const router = createFakeRouter();
+  const { client: c, clock } = client(router);
+  await c.modems();
+  clock.now += 300_000;
+  await Promise.all([c.modems(), c.deviceStatus(), c.modems()]);
+  assert.equal(router.logins().length, 2);
+});
+
+test('M1 a short token keeps half of its life: no login before every request', async () => {
+  const router = createFakeRouter();
+  router.expires = 20;
+  const { client: c, clock } = client(router);
+  await c.deviceStatus();
+  await c.modems();
+  assert.equal(router.logins().length, 1);
+  clock.now += 9_000;
+  await c.modems();
+  assert.equal(router.logins().length, 1);
+  clock.now += 2_000;
+  await c.modems();
+  assert.equal(router.logins().length, 2);
+});

@@ -33,3 +33,18 @@ the notes of the version's GitHub Release.
 - The IMEI, IMSI, ICCID, serial numbers, MAC addresses and phone numbers are
   never taken into Gladys, the logs nor `/data`.
 - Documentation in English and French. Never tested with a real router.
+
+### Fixed
+
+- The reboot request is never written after its 3.5 s deadline, even when
+  the connection to the router is slow.
+- An HTTP 429 or 5xx met by the reboot pauses every reading too; refused
+  credentials or another certificate met by the reboot stop the integration
+  at once.
+- The Test the connection button never reads the router faster than the
+  refresh after a failure.
+- A short token (20 s) no longer means a login before every request nor a
+  refused reboot; two readings needing a new token share one login.
+- A MAC address in a name is never shown; a reboot time in the future
+  counts as now for the 10-minute cooldown; Discovery is sent again when the
+  start is blocked.

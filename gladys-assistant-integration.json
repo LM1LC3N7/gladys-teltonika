@@ -130,8 +130,8 @@
       "key": "test_connection",
       "label": { "en": "Test the connection", "fr": "Tester la connexion" },
       "description": {
-        "en": "Logs in and reads the modems, again only when the last reading is older than the refresh. Refused credentials are tried again only when you save the configuration.",
-        "fr": "Se connecte et lit les modems, de nouveau seulement quand la dernière lecture est plus ancienne que le rafraîchissement. Des identifiants refusés ne sont réessayés qu'à l'enregistrement de la configuration."
+        "en": "Logs in and reads the modems, again only when the last reading is older than the refresh; after a failure, it says the status until the next retry. Saving the configuration reads at once and tries refused credentials again.",
+        "fr": "Se connecte et lit les modems, de nouveau seulement quand la dernière lecture est plus ancienne que le rafraîchissement ; après une erreur, il donne le statut jusqu'au prochain essai. Enregistrer la configuration relit tout de suite et réessaie des identifiants refusés."
       },
       "timeout_seconds": 30
     }

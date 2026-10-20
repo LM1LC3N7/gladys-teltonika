@@ -144,3 +144,16 @@ test('no prototype pollution from an answer', () => {
   assert.equal({}.polluted, undefined);
   assert.equal(Object.getPrototypeOf(modems[0]), Object.prototype);
 });
+
+test('M3 MAC addresses in a text: every spelling dropped', () => {
+  for (const value of [
+    'RUTX50 20:97:27:AA:BB:CC',
+    'lan 20-97-27-aa-bb-cc',
+    'id 2097.27aa.bbcc',
+    'Modem 209727aabbcc',
+  ]) {
+    assert.equal(cleanText(value), null, value);
+  }
+  assert.equal(cleanText('RG501QEUAAR12A11M4G'), 'RG501QEUAAR12A11M4G');
+  assert.equal(cleanText('5G N78'), '5G N78');
+});

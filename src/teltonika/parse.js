@@ -9,7 +9,7 @@
 // answer: the router serial only becomes a SHA-256 identity, so that a command
 // can check it talks to the same router. A text that holds a long run of
 // digits (an IMSI, an ICCID or a phone number in a field that should not
-// have one) is dropped.
+// have one) or a MAC address is dropped.
 // -----------------------------------------------------------------------------
 
 import { createHash } from 'node:crypto';
@@ -17,6 +17,12 @@ import { LIMITS } from '../constants.js';
 
 /** A modem id as RutOS gives it (its USB path: `2-1`, `1-1.4`, `3-1`). */
 export const MODEM_ID = /^[a-z0-9][a-z0-9._-]{0,31}$/;
+
+const MAC = [
+  /\b[0-9a-f]{2}([:-])(?:[0-9a-f]{2}\1){4}[0-9a-f]{2}\b/i,
+  /\b[0-9a-f]{4}\.[0-9a-f]{4}\.[0-9a-f]{4}\b/i,
+  /\b[0-9a-f]{12}\b/i,
+];
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const own = (object, key) =>
@@ -31,6 +37,8 @@ export function cleanText(value, max = LIMITS.TEXT_LENGTH) {
   // Eight digits or more in a row (spaces and dashes allowed): an IMSI, an
   // ICCID, an IMEI, a phone number. Never shown.
   if (/\+?\d(?:[\s-]?\d){7,}/.test(text)) return null;
+  // A MAC address, written with colons, dashes or dots, or as 12 hex digits.
+  if (MAC.some((pattern) => pattern.test(text))) return null;
   return text.slice(0, max);
 }
 

@@ -65,7 +65,9 @@ Intégration non officielle, sans lien avec Teltonika.
 Le bouton **Tester la connexion** dit ce que le routeur répond. Comme
 l'analyse de l'onglet Découverte et un redémarrage de Gladys, il ne relit le
 routeur que si la dernière lecture est plus ancienne que le
-rafraîchissement.
+rafraîchissement ; après une erreur, il redonne le statut de cette erreur
+jusqu'au prochain essai, sans requête. Seul l'enregistrement de la
+configuration relit tout de suite.
 
 ## Les valeurs
 
@@ -136,7 +138,7 @@ Gladys ne garde que ce qu'il montre. L'IMEI, l'IMSI, l'ICCID, les numéros de
 série, les adresses MAC, les identifiants de cellule et les numéros de
 téléphone que le routeur renvoie ne sont jamais repris : ni dans Gladys, ni
 dans les journaux, ni dans `/data`. Un texte qui contient un long numéro
-(qui n'aurait rien à y faire) n'est pas affiché.
+(qui n'aurait rien à y faire) ou une adresse MAC n'est pas affiché.
 
 L'intégration ne fait pas encore la liste des appareils connectés au
 routeur ni la présence (voir TODO.md).

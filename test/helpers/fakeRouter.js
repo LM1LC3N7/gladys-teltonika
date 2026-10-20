@@ -109,6 +109,8 @@ export function createFakeRouter({ clock } = {}) {
     gate: null,
     /** ms the clock moves on during a request (a slow router). */
     delayMs: 0,
+    /** path -> ms the clock moves on during the handshakes, before beforeSend. */
+    connectMs: {},
     /** The reboot answer: 'ok' | 'refused' | 'timeout' | 'error500'. */
     reboot: 'ok',
     reboots: 0,
@@ -175,6 +177,8 @@ export function createFakeRouter({ clock } = {}) {
         { fingerprint: fake.fingerprint },
       );
     }
+    // The TCP and TLS handshakes of a slow router, before anything is written.
+    if (clock && fake.connectMs[target.path]) clock.now += fake.connectMs[target.path];
     if (options.beforeSend) {
       try {
         options.beforeSend();

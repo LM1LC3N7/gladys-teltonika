@@ -30,6 +30,14 @@ export function reasonOf(err) {
         en: `RutOS error ${err.apiCode ?? ''}`.trim(),
         fr: `erreur RutOS ${err.apiCode ?? ''}`.trim(),
       };
+    case CODES.CREDENTIALS:
+      return { en: 'user name or password refused', fr: 'identifiants refusés' };
+    case CODES.ACCESS:
+      return { en: 'access refused to this account', fr: 'accès refusé à ce compte' };
+    case CODES.CERTIFICATE:
+      return { en: 'another HTTPS certificate', fr: 'autre certificat HTTPS' };
+    case CODES.REDIRECT:
+      return { en: 'redirection', fr: 'redirection' };
     case CODES.CLOSED:
       return { en: 'configuration changed', fr: 'configuration changée' };
     default:
@@ -184,6 +192,8 @@ export const T = {
     cooldown: (ago) =>
       `A reboot was sent ${minutes(ago)} min ago: nothing sent (10 min between two reboots)`,
     tooSlow: 'The router did not answer in time: the reboot was not sent',
+    noSession:
+      'No valid session with the router just before sending: the reboot was not sent, try again',
     unknownState: (reason) =>
       `The router could not be read just before the reboot (${reason}): the reboot was not sent`,
     otherRouter:

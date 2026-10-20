@@ -90,6 +90,8 @@ export class TeltonikaClient {
     this.token = null;
     this.tokenUntil = 0;
     this.closed = false;
+    /** The login in flight, shared (single flight). */
+    this.loggingIn = null;
   }
 
   close() {
@@ -132,9 +134,20 @@ export class TeltonikaClient {
     return response;
   }
 
-  /** POST /api/login: a new token. Rejects CREDENTIALS when the router refuses them. */
-  async login(deadline) {
-    this.token = null;
+  /**
+   * POST /api/login: a new token. Rejects CREDENTIALS when the router refuses
+   * them. One login at a time: a reading and a command that both need a new
+   * token share the same login (single flight), and the old token is kept
+   * until the new one arrives.
+   */
+  login(deadline) {
+    this.loggingIn ??= this.#login(deadline).finally(() => {
+      this.loggingIn = null;
+    });
+    return this.loggingIn;
+  }
+
+  async #login(deadline) {
     const response = await this.send('POST', PATHS.LOGIN, {
       body: { username: this.username, password: this.password },
       auth: false,
@@ -144,6 +157,7 @@ export class TeltonikaClient {
     const envelope = parseEnvelope(body);
     const loginFailed = envelope?.errors.some((e) => e.code === API_CODES.LOGIN_FAILED);
     if (response.status === 401 || loginFailed) {
+      this.token = null;
       throw new RouterError(CODES.CREDENTIALS, 'User name or password refused', {
         status: response.status,
       });
@@ -163,8 +177,10 @@ export class TeltonikaClient {
       throw new RouterError(CODES.BAD_ANSWER, 'Not a RutOS login answer');
     }
     this.token = login.token;
-    const seconds = login.expires ?? INTERVALS.TOKEN_DEFAULT_S;
-    this.tokenUntil = this.now() + Math.max(0, seconds * 1000 - INTERVALS.TOKEN_MARGIN_MS);
+    const lifetime = (login.expires ?? INTERVALS.TOKEN_DEFAULT_S) * 1000;
+    // The margin never eats more than half of a short token (a token of 20 s
+    // stays usable 10 s: not a login before every request).
+    this.tokenUntil = this.now() + lifetime - Math.min(INTERVALS.TOKEN_MARGIN_MS, lifetime / 2);
   }
 
   /** A token valid for a while yet, renewed when it is not. */
@@ -228,7 +244,9 @@ export class TeltonikaClient {
    */
   async reboot({ sendBy, answerBy, beforeSend }) {
     if (!this.token || this.now() >= this.tokenUntil) {
-      throw new RouterError(CODES.LATE, 'No valid session', { notSent: true });
+      throw Object.assign(new RouterError(CODES.LATE, 'No valid session', { notSent: true }), {
+        noSession: true,
+      });
     }
     if (this.now() > sendBy) throw new RouterError(CODES.LATE, 'Too late', { notSent: true });
     const response = await this.send('POST', PATHS.REBOOT, { deadline: answerBy, beforeSend });

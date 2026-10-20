@@ -59,7 +59,9 @@ Unofficial integration, not affiliated with Teltonika.
 
 The **Test the connection** button says what the router answers. Like the
 scan of the Discovery tab and a restart of Gladys, it reads the router again
-only when the last reading is older than the refresh.
+only when the last reading is older than the refresh; after a failure, it
+gives the status of that failure until the next retry, without a request.
+Only saving the configuration reads at once.
 
 ## The values
 
@@ -125,7 +127,7 @@ Gladys keeps only what it shows. The IMEI, the IMSI, the ICCID, the serial
 numbers, the MAC addresses, the cell ids and the phone numbers the router
 returns are never taken: not into Gladys, not into the logs, not into
 `/data`. A text holding a long run of digits (a number that has no business
-there) is not shown.
+there) or a MAC address is not shown.
 
 The integration does not list the devices connected to the router nor
 presence yet (see TODO.md).

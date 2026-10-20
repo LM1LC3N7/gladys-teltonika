@@ -29,6 +29,18 @@ up to date at the end of every milestone.
       **Never tested with a real router.** No Docker on this PC: no e2e test
       in a container. The store validator was not run by the development
       agent (it runs in the real terminal only).
+- [x] **Review corrections 1** (2026-10-21): the deadline of 3.5 s checked
+      again in `beforeSend`, after the handshakes (I1); a 429 / 5xx met by
+      the reboot takes the usual failure path (loop halted, pause kept, the
+      loop never reads inside a pause) and refused credentials or another
+      certificate met by it stop at once (I2, M8); the test button keeps the
+      retry wait of a failure, only a saved configuration reads at once
+      (I3); token margin `min(30 s, half its life)` and "no valid session"
+      said as such (M1); single-flight login, the old token kept until the
+      new one (M2); MAC addresses dropped from texts (M3); TODO on logins
+      (M4); a reboot time in the future counts as now (M5); a pause kept in
+      memory too when /data cannot be written (M6); Discovery sent again
+      when the start is blocked (M7). Each with a test, except M6.
 
 ## Decisions
 
@@ -57,10 +69,16 @@ up to date at the end of every milestone.
   password; lifted only by saving the configuration (the router may lock an
   account after failures). HTTP 403 at login or a session refused again
   right after a new login = the account lacks rights: spaced retry (never a
-  loop: one new login per reading at most).
-- **Token**: renewed 30 s before the `expires` given by RutOS (299 s when it
-  says nothing); a session the router rejects (401, codes 120 / 123) is
-  renewed once per request, then the reading fails.
+  loop: at most two logins per request, an expired token then a rejected
+  session, and the next reading only after the retry delay).
+- **Token**: renewed `min(30 s, half its life)` before the `expires` given
+  by RutOS (299 s when it says nothing); one login at a time (single
+  flight), the old token kept until the new one arrives; a session the
+  router rejects (401, codes 120 / 123) is renewed once per request, then
+  the reading fails.
+- **Test button**: like a reconnection to Gladys, it never reads faster
+  than the interval; within the retry wait of a failure it answers that
+  failure without a request. Only saving the configuration reads at once.
 - **External ids**: `router:main` (one router per installation) and
   `modem:<RutOS modem id>` (its USB path, `2-1`, lowercase), stable across a
   SIM, an operator or a reboot. Never the IMEI nor a serial.
@@ -81,15 +99,19 @@ up to date at the end of every milestone.
   (must succeed and carry the same identity, a SHA-256 of serial and model,
   in memory only), the request refused unsent after 3.5 s, its answer
   awaited until 4.5 s (Gladys acks within 5 s); the option, the
-  configuration, a pause and the cooldown checked again right before the
-  request is written (`beforeSend`); never retried, never preceded by a
-  login; a silence or a 5xx after the request was written is "sent, without
-  confirmation"; 10 min between two reboots, kept in `/data` before the ack
-  (the ack does not wait for Gladys). Modem reboot, connection restart and
+  configuration, a pause, the cooldown and the 3.5 s deadline checked again
+  right before the request is written, after the TCP and TLS handshakes
+  (`beforeSend`); never retried, never preceded by a login; a silence or a
+  5xx after the request was written is "sent, without confirmation"; a 429
+  / 5xx, refused credentials or another certificate met by the command take
+  the usual failure path at once (pause or stop, persisted); 10 min between
+  two reboots, kept in `/data` before the ack, a time in the future counted
+  as now (the ack does not wait for Gladys). Modem reboot, connection restart and
   SIM switch (in teltasync) are not offered.
 - **Identifiers**: the IMEI, IMSI, ICCID, serial numbers, MAC addresses,
   cell ids, area codes and phone numbers are never copied out of an answer;
-  a text with 8 digits or more in a row is dropped.
+  a text with 8 digits or more in a row, or a MAC address (colons, dashes,
+  dots or 12 hex digits), is dropped.
 - **Triggers**: data connected true -> false and false -> true between two
   consecutive good readings only; variables `modem_name`, `operator`
   (string or null).

@@ -5,7 +5,7 @@
 
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
@@ -500,4 +500,135 @@ test('reboot: during a pause, nothing is sent', async () => {
   const ack = await press(gladys);
   assert.equal(ack.success, false);
   assert.equal(router.reboots, 0);
+});
+
+// --- Review 1 ---------------------------------------------------------------------
+
+test('I1 reboot: slow handshakes after the fresh reading: refused unsent past 3.5 s', async () => {
+  const { gladys, router } = await setup({ config: { allow_reboot: true } });
+  router.delayMs = 2_400; // the fresh reading takes 2.4 s
+  router.connectMs = { '/api/system/actions/reboot': 1_200 }; // then 1.2 s of handshakes
+  const ack = await press(gladys);
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /did not answer in time: the reboot was not sent/);
+  assert.equal(router.reboots, 0, 'never written after the deadline');
+});
+
+test('I2 reboot: a 429 on the fresh reading pauses the loop too, kept until its end', async () => {
+  const { gladys, router, timers, clock, app } = await setup({ config: { allow_reboot: true } });
+  router.failuresOn.set('/api/system/device/status', [
+    { status: 429, headers: { 'retry-after': '1800' }, body: '{}' },
+  ]);
+  const ack = await press(gladys);
+  assert.match(ack.error, /could not be read just before the reboot \(HTTP error 429\)/);
+  await app.following;
+  assert.equal(app.pausedUntil, clock.now + 1_800_000);
+  assert.deepEqual(timers.delays(), [1_800_000], 'the loop timer replaced by the end of the pause');
+  assert.match(gladys.fake.connectionStatus.message.en, /HTTP 429/);
+  const count = router.requests.length;
+  clock.now += 60_000;
+  await poll(timers);
+  assert.equal(router.requests.length, count, 'nothing read inside the pause');
+  // Even a loop round already scheduled waits for the end of the pause.
+  await app.loop(app.generation, app.epoch);
+  assert.equal(router.requests.length, count);
+  clock.now += 1_800_000;
+  await timers.run((ms) => ms === 1_800_000);
+  assert.equal(gladys.fake.connectionStatus.connected, true);
+});
+
+test('I3 the test button never reads faster than the interval after a failure', async () => {
+  const router = createFakeRouter();
+  const request = router.request;
+  let calls = 0;
+  router.request = (target, options) => {
+    calls += 1;
+    return request(target, options);
+  };
+  const { gladys, timers, clock } = await setup({ router });
+  router.unreachable = true;
+  clock.now += 60_000;
+  await poll(timers);
+  const base = calls;
+  for (let i = 0; i < 3; i += 1) {
+    clock.now += 1_000;
+    const ack = await gladys.fake.action(ACTIONS.TEST);
+    assert.equal(ack.success, false);
+    assert.match(ack.error, /does not answer/);
+  }
+  assert.equal(calls, base, 'no request from the button within the retry wait');
+  // Saving the configuration reads at once.
+  router.unreachable = false;
+  await gladys.fake.configUpdated({ ...BASE_CONFIG });
+  assert.ok(calls > base);
+  assert.equal(gladys.fake.connectionStatus.connected, true);
+});
+
+test('M1 a short token (20 s): one login at start, the reboot works', async () => {
+  const router = createFakeRouter();
+  router.expires = 20;
+  const { gladys } = await setup({ router, config: { allow_reboot: true } });
+  assert.equal(router.logins().length, 1);
+  const ack = await press(gladys);
+  assert.equal(ack.success, true, ack.error);
+  assert.equal(router.reboots, 1);
+});
+
+test('M3 a MAC address in a name never reaches Discovery', async () => {
+  const router = createFakeRouter();
+  router.device.static.device_name = 'RUTX50 20:97:27:AA:BB:CC';
+  router.modems[0].name = 'Modem 209727aabbcc';
+  const { gladys } = await setup({ router });
+  const text = JSON.stringify(gladys.fake.discoveredDevices).toLowerCase();
+  assert.ok(!text.includes('20:97:27:aa:bb:cc'));
+  assert.ok(!text.includes('209727aabbcc'));
+  // The name with a MAC is dropped: the host name of the router instead.
+  assert.equal(gladys.fake.discoveredDevices[0].name, 'Teltonika-RUTX50.com');
+  assert.equal(gladys.fake.discoveredDevices[1].name, 'Modem 2-1');
+});
+
+test('M5 a reboot time in the future counts as now: 10 min of cooldown, not none', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'teltonika-future-'));
+  writeFileSync(
+    join(dataDir, 'teltonika.json'),
+    JSON.stringify({ meta: { 'rebootAt|192.168.1.1:443': String(T0 + 365 * 86_400_000) } }),
+  );
+  const { gladys, router, clock } = await setup({ config: { allow_reboot: true }, dataDir });
+  assert.match((await press(gladys)).error, /10 min between two reboots/);
+  clock.now += 10 * 60_000;
+  assert.equal((await press(gladys)).success, true);
+  assert.equal(router.reboots, 1);
+});
+
+test('M7 a blocked start still publishes Discovery (the router)', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'teltonika-m7-'));
+  const router = createFakeRouter();
+  router.password = 'another one';
+  const first = await setup({ router, dataDir });
+  await first.app.stop();
+  // A restart with the refused values: stopped before any request.
+  const { gladys } = await setup({ router, dataDir });
+  assert.equal(router.logins().length, 1);
+  assert.deepEqual(
+    gladys.fake.discoveredDevices.map((d) => d.external_id),
+    [ROUTER],
+  );
+});
+
+test('M8 credentials refused during the fresh reading are persisted at once', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'teltonika-m8-'));
+  const ctx = await setup({ config: { allow_reboot: true }, dataDir });
+  const { gladys, router, clock, app } = ctx;
+  router.password = 'changed on the router';
+  router.dropSessions();
+  clock.now += 300_000; // the token expired: the fresh reading logs in
+  const ack = await press(gladys);
+  assert.match(ack.error, /user name or password refused/);
+  await app.following;
+  assert.match(gladys.fake.connectionStatus.message.en, /refused the user name or the password/);
+  assert.deepEqual(ctx.timers.delays(), [], 'the loop stopped');
+  await app.stop();
+  const logins = router.logins().length;
+  await setup({ dataDir, router, clock });
+  assert.equal(router.logins().length, logins, 'not tried again after a restart');
 });
