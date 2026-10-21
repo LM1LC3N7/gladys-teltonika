@@ -48,3 +48,6 @@ the notes of the version's GitHub Release.
 - A MAC address in a name is never shown; a reboot time in the future
   counts as now for the 10-minute cooldown; Discovery is sent again when the
   start is blocked.
+- Two failures at the same time (the loop and the reboot) never start two
+  reading chains; a reboot that joins a slow login of the loop is refused
+  at its own deadline (2.5 s), not after the 15 s of the reading.

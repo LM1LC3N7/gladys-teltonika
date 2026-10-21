@@ -40,7 +40,15 @@ up to date at the end of every milestone.
       new one (M2); MAC addresses dropped from texts (M3); TODO on logins
       (M4); a reboot time in the future counts as now (M5); a pause kept in
       memory too when /data cannot be written (M6); Discovery sent again
-      when the start is blocked (M7). Each with a test, except M6.
+      when the start is blocked (M7). Each with a test, except M6 (the
+      store already keeps a value in memory when /data cannot be written:
+      `pauseMemory` is redundant, kept as harmless).
+- [x] **Review corrections 2** (2026-10-21): `failed()` keeps the epoch
+      it halted to and never sets a status nor schedules once another
+      failure (or a stop) took over; a 429 / 5xx met by the reboot while the
+      loop already failed is left to the loop (R1); a caller joining the
+      shared login waits until its own deadline only, `LATE` unsent, the
+      login going on for the others (R2). A test each.
 
 ## Decisions
 
@@ -73,7 +81,8 @@ up to date at the end of every milestone.
   session, and the next reading only after the retry delay).
 - **Token**: renewed `min(30 s, half its life)` before the `expires` given
   by RutOS (299 s when it says nothing); one login at a time (single
-  flight), the old token kept until the new one arrives; a session the
+  flight), the old token kept until the new one arrives, each caller
+  waiting until its own deadline only; a session the
   router rejects (401, codes 120 / 123) is renewed once per request, then
   the reading fails.
 - **Test button**: like a reconnection to Gladys, it never reads faster

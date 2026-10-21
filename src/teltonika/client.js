@@ -68,6 +68,7 @@ export class TeltonikaClient {
    * @param {(fingerprint: string) => Promise<void>} [options.onPin] a certificate learned now
    * @param {Function} [options.request] the HTTP transport (tests inject a fake router)
    * @param {() => number} [options.now]
+   * @param {{ setTimeout: Function, clearTimeout: Function }} [options.timers]
    */
   constructor({
     protocol,
@@ -79,7 +80,9 @@ export class TeltonikaClient {
     onPin,
     request = httpRequest,
     now = Date.now,
+    timers = globalThis,
   }) {
+    this.timers = timers;
     this.target = { protocol, host, port };
     this.username = username;
     this.password = password;
@@ -141,10 +144,30 @@ export class TeltonikaClient {
    * until the new one arrives.
    */
   login(deadline) {
-    this.loggingIn ??= this.#login(deadline).finally(() => {
-      this.loggingIn = null;
+    if (!this.loggingIn) {
+      this.loggingIn = this.#login(deadline).finally(() => {
+        this.loggingIn = null;
+      });
+      // Every caller may stop waiting (its deadline): never an unhandled rejection.
+      this.loggingIn.catch(() => {});
+    }
+    const shared = this.loggingIn;
+    if (deadline === undefined || deadline === Infinity) return shared;
+    // A caller that joins a login started by another waits until its own
+    // deadline only (a command never waits for the 15 s of a reading); the
+    // shared login goes on for the others.
+    const left = deadline - this.now();
+    if (left <= 0) {
+      return Promise.reject(new RouterError(CODES.LATE, 'Too late', { notSent: true }));
+    }
+    let handle;
+    const limit = new Promise((_, reject) => {
+      handle = this.timers.setTimeout(
+        () => reject(new RouterError(CODES.LATE, 'A login is still running', { notSent: true })),
+        left,
+      );
     });
-    return this.loggingIn;
+    return Promise.race([shared, limit]).finally(() => this.timers.clearTimeout(handle));
   }
 
   async #login(deadline) {

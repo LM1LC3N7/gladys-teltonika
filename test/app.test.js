@@ -632,3 +632,70 @@ test('M8 credentials refused during the fresh reading are persisted at once', as
   await setup({ dataDir, router, clock });
   assert.equal(router.logins().length, logins, 'not tried again after a restart');
 });
+
+// --- Review 2 ---------------------------------------------------------------------
+
+test('R1 two 429 at once (the loop and the reboot): one reading chain only', async () => {
+  const { gladys, router, timers, clock, app } = await setup({ config: { allow_reboot: true } });
+  router.failuresOn.set('/api/modems/status', [{ status: 429, headers: { 'retry-after': '120' } }]);
+  router.failuresOn.set('/api/system/device/status', [
+    { status: 429, headers: { 'retry-after': '120' } },
+  ]);
+  let release;
+  router.gate = new Promise((resolve) => (release = resolve));
+  clock.now += 60_000;
+  const loop = poll(timers);
+  const pressed = press(gladys);
+  await new Promise((resolve) => setImmediate(resolve));
+  router.gate = null;
+  release();
+  await loop;
+  const ack = await pressed;
+  assert.equal(ack.success, false);
+  await app.following;
+  await app.queue;
+  assert.deepEqual(timers.delays(), [120_000], 'a single timer');
+  // Directly: two failures handled at the same time keep a single chain.
+  const err = Object.assign(new Error('HTTP 429'), {
+    code: 'http',
+    status: 429,
+    retryAfterMs: 120_000,
+  });
+  await Promise.all([app.failed(err, app.generation), app.failed(err, app.generation)]);
+  assert.equal(timers.delays().length, 1);
+  clock.now += 120_000;
+  await timers.run();
+  assert.deepEqual(timers.delays(), [60_000], 'back to one loop');
+});
+
+test('R2 the reboot joining a slow login of the loop gives up at its own deadline', async () => {
+  const { gladys, router, timers, clock } = await setup({ config: { allow_reboot: true } });
+  const request = router.request;
+  let release;
+  const gate = new Promise((resolve) => (release = resolve));
+  router.request = async (target, options) => {
+    if (target.path === '/api/login') await gate;
+    return request(target, options);
+  };
+  // The app holds the fake transport through the client: patch it there.
+  const app = running;
+  app.client.request = router.request;
+  clock.now += 300_000; // the token expired
+  const loop = poll(timers); // the loop logs in (deadline 15 s), stuck
+  await new Promise((resolve) => setImmediate(resolve));
+  const pressed = press(gladys);
+  await new Promise((resolve) => setImmediate(resolve));
+  // The only timer of 2.5 s or less: the deadline of the reboot's wait.
+  const waits = timers.delays().filter((ms) => ms <= 2_500);
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0] <= 2_500);
+  clock.now += waits[0];
+  await timers.run((ms) => ms <= 2_500);
+  const ack = await pressed;
+  assert.equal(ack.success, false);
+  assert.match(ack.error, /did not answer in time: the reboot was not sent/);
+  assert.equal(router.reboots, 0);
+  release();
+  await loop;
+  assert.equal(gladys.fake.connectionStatus.connected, true, 'the shared login went on');
+});

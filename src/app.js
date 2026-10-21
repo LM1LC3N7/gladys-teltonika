@@ -298,6 +298,7 @@ export class TeltonikaApp {
       },
       request: this.request,
       now: this.now,
+      timers: this.timers,
     });
     this.logger.info(`Using the RutOS API at ${config.protocol}://${config.host}:${config.port}`);
     // A pause (HTTP 429 or 5xx) outlives a restart, a reconnection to Gladys
@@ -475,6 +476,10 @@ export class TeltonikaApp {
     this.baseline = false;
     this.counters.clear();
     this.halt();
+    // Another failure handled meanwhile (it halted again) owns the next
+    // reading: this one never schedules a second chain.
+    const epoch = this.epoch;
+    const superseded = () => generation !== this.generation || epoch !== this.epoch || this.blocked;
     await this.publishTransports();
     if (isCredentialsRefused(err)) {
       this.blocked = true;
@@ -514,8 +519,9 @@ export class TeltonikaApp {
       delay: this.retryDelay,
       message,
     };
-    if (generation !== this.generation) return;
+    if (superseded()) return;
     await this.setStatus(false, message);
+    if (superseded()) return;
     this.schedule(delay, () => this.connect(generation));
   }
 
@@ -872,6 +878,9 @@ export class TeltonikaApp {
     const pause = err?.code === CODES.HTTP && (err.status === 429 || err.status >= 500);
     const final = isCredentialsRefused(err) || (err?.code === CODES.CERTIFICATE && err.fingerprint);
     if (!pause && !final) return;
+    // The loop already failed meanwhile and follows its own failure: one
+    // chain only. A final refusal is still kept (failed() never schedules it).
+    if (pause && !this.online) return;
     /** The failure being followed (the tests wait for it). */
     this.following = this.failed(err, generation).catch((e) =>
       this.logger.warn(`Failure not handled: ${e?.message}`),
