@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-21
+
 ### Added
 
 - First version: a Teltonika 4G/5G router (RutOS 7 or later) through its local
@@ -51,3 +53,6 @@ the notes of the version's GitHub Release.
 - Two failures at the same time (the loop and the reboot) never start two
   reading chains; a reboot that joins a slow login of the loop is refused
   at its own deadline (2.5 s), not after the 15 s of the reading.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-teltonika/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-teltonika/releases/tag/v0.1.1
