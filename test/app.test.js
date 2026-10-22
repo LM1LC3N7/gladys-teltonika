@@ -135,7 +135,7 @@ test('start: status, Discovery, states, badges; modems read every 60 s', async (
     router.requests.map((r) => `${r.method} ${r.path}`),
     ['POST /api/login', 'GET /api/system/device/status', 'GET /api/modems/status'],
   );
-  assert.equal(router.requests[1].headers['user-agent'], 'gladys-teltonika/0.1.0');
+  assert.match(router.requests[1].headers['user-agent'], /^gladys-teltonika\/\d+\.\d+\.\d+$/);
   assert.match(router.requests[1].headers.authorization, /^Bearer /);
 
   // The next reading: the modems only, the same token, the rates.
