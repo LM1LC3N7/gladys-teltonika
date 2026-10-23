@@ -1,6 +1,6 @@
 {
   "name": "gladys-teltonika",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for Teltonika 4G/5G routers (RutOS): mobile signal, operator, data connection, rates and data counters through the local HTTP API of the router, and a reboot button off by default. Unofficial, not affiliated with Teltonika.",
   "type": "module",
