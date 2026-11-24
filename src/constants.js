@@ -95,8 +95,11 @@ export const INTERVALS = Object.freeze({
   TOKEN_DEFAULT_S: 299,
   /** A rate needs two readings at least this close (else it is not shown). */
   RATE_MAX_GAP_FACTOR: 3,
-  /** Gladys takes one widget refresh nudge per 10 s per widget: never more often. */
-  WIDGET_NUDGE_MS: 10_000,
+  /**
+   * Gladys takes one widget refresh nudge per 10 s per widget, measured on
+   * its own reception times: 10 s and a margin for the jitter of the socket.
+   */
+  WIDGET_NUDGE_MS: 10_250,
 });
 
 /** The reboot command: deadlines counted from its arrival (Gladys acks within 5 s). */

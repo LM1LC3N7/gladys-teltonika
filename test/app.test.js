@@ -789,7 +789,11 @@ test('widget: router not read: everything unknown, red, and why', async () => {
   const content = await widget(gladys);
   assert.equal(textsOf(content)[0].text, 'Operator unknown');
   assert.equal(textsOf(content)[1].variant, 'body');
-  assert.match(textsOf(content)[1].text, /Retried in/);
+  assert.equal(
+    textsOf(content)[1].text,
+    'The router does not answer: no connection',
+    'no frozen countdown',
+  );
   assert.deepEqual(tiles(content), {
     Signal: 'unknown',
     Network: 'unknown',
@@ -815,6 +819,7 @@ test('widget: the modem chosen in its settings, never another one in its place',
   let content = await widget(gladys, { settings: { device: `ext:${SELECTOR}:modem:1-1.4` } });
   assert.equal(textsOf(content)[0].text, 'SFR');
   assert.match(textsOf(content)[1].text, /^Modem 2\/2: External modem/);
+  assert.doesNotMatch(textsOf(content)[1].text, /choose it/, 'chosen already: no hint');
   // A modem the router no longer lists: nothing shown in its place.
   content = await widget(gladys, { settings: { device: `ext:${SELECTOR}:modem:3-1` } });
   assert.equal(textsOf(content)[0].text, 'Operator unknown');
@@ -886,23 +891,171 @@ test('widget: a nudge when what it shows changes, one per 10 s at most', async (
   router.modems[0].rssi = -100;
   await poll(timers);
   assert.equal(gladys.fake.widgetRefreshes.length, 3);
-  // Another change 3 s later (a Discovery reading): sent once, 7 s later.
+  // Another change 3 s later (a Discovery reading): sent once, 7.25 s later.
   clock.now += 3_000;
   router.modems[0].rssi = -70;
   await app.refresh({ publish: true });
   assert.equal(gladys.fake.widgetRefreshes.length, 3, 'not within 10 s');
-  assert.ok(timers.delays().includes(7_000), String(timers.delays()));
+  assert.ok(timers.delays().includes(7_250), String(timers.delays()));
   router.modems[0].rssi = -60;
   await app.refresh({ publish: true });
-  assert.equal(timers.delays().filter((d) => d === 7_000).length, 1, 'one planned nudge');
-  clock.now += 7_000;
-  await timers.run((delay) => delay === 7_000);
+  assert.equal(timers.delays().filter((d) => d === 7_250).length, 1, 'one planned nudge');
+  clock.now += 7_250;
+  await timers.run((delay) => delay === 7_250);
   assert.equal(gladys.fake.widgetRefreshes.length, 4);
   // A planned nudge never outlives the app.
   clock.now += 1_000;
   router.modems[0].rssi = -110;
   await app.refresh({ publish: true });
-  assert.ok(timers.delays().includes(9_000), String(timers.delays()));
+  assert.ok(timers.delays().includes(9_250), String(timers.delays()));
   await app.stop();
-  assert.ok(!timers.delays().includes(9_000));
+  assert.ok(!timers.delays().includes(9_250));
+});
+
+test('widget: right after a reboot, nothing of the last reading until a reading begun after it works', async () => {
+  const { gladys, router, timers, clock, app } = await setup({ config: { allow_reboot: true } });
+  clock.now += 20_000; // past the nudge limit of the start
+  const before = gladys.fake.widgetRefreshes.length;
+  const ack = await gladys.fake.widgetAction(WIDGET, 'reboot');
+  assert.equal(ack.success, true, ack.error);
+  assert.equal(gladys.fake.widgetRefreshes.length, before + 1, 'nudged at once');
+  let content = await widget(gladys);
+  assert.equal(textsOf(content)[0].text, 'Operator unknown');
+  assert.match(textsOf(content)[1].text, /^Reboot sent: the router restarts/);
+  assert.deepEqual(tiles(content), {
+    Signal: 'unknown',
+    Network: 'unknown',
+    Download: 'unknown',
+    Upload: 'unknown',
+  });
+  assert.deepEqual(statusOf(content), {
+    'Mobile data': ['unknown', 'neutral'],
+    Router: ['Reboot sent', 'warning'],
+  });
+  content = await widget(gladys, { language: 'fr' });
+  assert.match(textsOf(content)[1].text, /^Redémarrage envoyé/);
+
+  // A reading begun before the reboot and ending after it shows nothing again.
+  let open;
+  router.gate = new Promise((resolve) => (open = resolve));
+  const reading = app.refresh({ publish: false });
+  await app.rebooted();
+  open();
+  router.gate = null;
+  await reading;
+  assert.deepEqual(statusOf(await widget(gladys)).Router, ['Reboot sent', 'warning']);
+
+  // The next reading after it works: back to normal, nudged.
+  clock.now += 60_000;
+  const nudges = gladys.fake.widgetRefreshes.length;
+  await poll(timers);
+  content = await widget(gladys);
+  assert.equal(textsOf(content)[0].text, 'Orange F');
+  assert.deepEqual(statusOf(content).Router, ['Answers', 'success']);
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges + 1);
+});
+
+test('widget: reconfiguration: reboot turned off, router changed', async () => {
+  const { gladys, router, clock } = await setup({ config: { allow_reboot: true } });
+  assert.equal(buttons(await widget(gladys)).length, 1);
+  clock.now += 20_000;
+  let nudges = gladys.fake.widgetRefreshes.length;
+  await gladys.fake.configUpdated({ ...BASE_CONFIG });
+  assert.deepEqual(buttons(await widget(gladys)), [], 'no button once the option is off');
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges + 1);
+  // Another router that does not answer: nothing of the former one.
+  clock.now += 20_000;
+  nudges = gladys.fake.widgetRefreshes.length;
+  router.unreachable = true;
+  await gladys.fake.configUpdated({ ...BASE_CONFIG, host: '192.168.1.2' });
+  const content = await widget(gladys);
+  assert.ok(!JSON.stringify(content).includes('Orange F'));
+  assert.equal(tiles(content).Network, 'unknown');
+  assert.deepEqual(statusOf(content).Router, ['Not read', 'danger']);
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges + 1);
+});
+
+test('widget: a nudge when the router stops answering, and when it is back', async () => {
+  const { gladys, router, timers, clock } = await setup();
+  clock.now += 60_000;
+  await poll(timers); // the rates
+  let nudges = gladys.fake.widgetRefreshes.length;
+  router.unreachable = true;
+  clock.now += 60_000;
+  await poll(timers);
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges + 1, 'online -> offline');
+  let content = await widget(gladys);
+  assert.deepEqual(statusOf(content).Router, ['Not read', 'danger']);
+  // The reason without its countdown, which would stay frozen in the widget.
+  assert.doesNotMatch(textsOf(content)[1].text, /Retried in/);
+  nudges = gladys.fake.widgetRefreshes.length;
+  router.unreachable = false;
+  clock.now += 60_000;
+  await poll(timers);
+  content = await widget(gladys);
+  assert.deepEqual(statusOf(content).Router, ['Answers', 'success']);
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges + 1, 'offline -> online');
+});
+
+test('widget: the reboot refused while the router is not read or paused, in English and French', async () => {
+  const { gladys, router, timers, clock } = await setup({ config: { allow_reboot: true } });
+  router.unreachable = true;
+  clock.now += 60_000;
+  await poll(timers);
+  let ack = await gladys.fake.widgetAction(WIDGET, 'reboot');
+  assert.match(ack.error, /^The router is not connected.* \/ Le routeur n’est pas connecté/);
+  router.unreachable = false;
+  await poll(timers);
+  router.failuresOn.set('/api/modems/status', [{ status: 429, headers: { 'retry-after': '900' } }]);
+  clock.now += 60_000;
+  await poll(timers);
+  // Paused by the router (HTTP 429): not read, nothing sent.
+  ack = await gladys.fake.widgetAction(WIDGET, 'reboot');
+  assert.match(ack.error, /^The router is not connected.* \/ Le routeur n’est pas connecté/);
+  ack = await gladys.fake.widgetAction(WIDGET, 'factory_reset');
+  assert.equal(ack.error, 'Unknown widget action / Action de widget inconnue');
+  assert.equal(router.reboots, 0);
+});
+
+test('widget: the language of the dashboard, French or English, English by default', async () => {
+  const { gladys } = await setup();
+  for (const [language, word] of [
+    ['fr-FR', 'Connectée'],
+    ['fr', 'Connectée'],
+    ['en-GB', 'Connected'],
+    ['de', 'Connected'],
+  ]) {
+    const content = await widget(gladys, { language });
+    assert.equal(statusOf(content)['Mobile data'][0], word, language);
+  }
+});
+
+test('widget: a change the widget would not show sends no nudge (rates rounded)', async () => {
+  const { gladys, router, timers, clock } = await setup();
+  clock.now += 60_000;
+  router.modems[0].rxbytes += 924_000; // 123.2 kbit/s
+  await poll(timers);
+  const nudges = gladys.fake.widgetRefreshes.length;
+  clock.now += 60_000;
+  router.modems[0].rxbytes += 925_500; // 123.4 kbit/s: still "123 kbit/s"
+  await poll(timers);
+  assert.equal(tiles(await widget(gladys)).Download, '123 kbit/s');
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges);
+});
+
+test('widget: a start in flight at stop() plans no nudge', async () => {
+  const { gladys, timers, app } = await setup();
+  let release;
+  app.store.load = () => new Promise((resolve) => (release = resolve));
+  const nudges = gladys.fake.widgetRefreshes.length;
+  const statuses = gladys.fake.connectionStatuses.length;
+  const run = app.start({ ...BASE_CONFIG, host: '' });
+  for (let i = 0; i < 5 && !release; i += 1) await new Promise((r) => setImmediate(r));
+  assert.ok(release, 'the start waits for /data');
+  await app.stop();
+  release();
+  await run;
+  assert.equal(gladys.fake.widgetRefreshes.length, nudges);
+  assert.equal(gladys.fake.connectionStatuses.length, statuses, 'no status after stop');
+  assert.deepEqual(timers.delays(), []);
 });

@@ -50,6 +50,15 @@ const RETRY = (delay) => ({
   fr: `Nouvel essai dans ${minutes(delay)} min.`,
 });
 
+/** A status without its "Retried in N min." (a countdown that a widget would show frozen). */
+export function withoutRetry(message) {
+  if (!message) return message;
+  return {
+    en: message.en?.replace(/\s*(?:—\s*)?Retried in \d+ min\.$/, ''),
+    fr: message.fr?.replace(/\s*(?:—\s*)?Nouvel essai dans \d+ min\.$/, ''),
+  };
+}
+
 export const join = (...parts) => ({
   en: parts
     .map((p) => p.en)
@@ -212,4 +221,46 @@ export const T = {
     testTooLong:
       'The router has not answered yet: see the connection status in a moment (nothing else to do)',
   },
+  /** The same refusals in French: the toasts of the widget give both (its action gets no language). */
+  errorsFr: {
+    unknownDevice: 'Cet appareil ne fait pas partie de ce routeur',
+    readOnly: 'Cette fonctionnalité lit seulement le routeur : rien ne peut être changé par elle',
+    badValue: 'Valeur invalide pour un bouton',
+    rebootDisabled:
+      'Le redémarrage n’est pas autorisé : activez « Autoriser le redémarrage du routeur » dans la configuration',
+    notConnected: 'Le routeur n’est pas connecté : voir la configuration de l’intégration',
+    paused: (delay) =>
+      `Le routeur a demandé à Gladys d’attendre : rien envoyé, réessayez dans ${minutes(delay)} min`,
+    stillRunning: 'Un redémarrage est déjà en cours d’envoi',
+    cooldown: (ago) =>
+      `Un redémarrage a été envoyé il y a ${minutes(ago)} min : rien envoyé (10 min entre deux redémarrages)`,
+    tooSlow: 'Le routeur n’a pas répondu à temps : le redémarrage n’a pas été envoyé',
+    noSession:
+      'Pas de session valide avec le routeur juste avant l’envoi : le redémarrage n’a pas été envoyé, réessayez',
+    unknownState: (reason) =>
+      `Le routeur n’a pas pu être lu juste avant le redémarrage (${reason}) : le redémarrage n’a pas été envoyé`,
+    otherRouter:
+      'Le routeur à cette adresse n’est pas celui lu avant : le redémarrage n’a pas été envoyé (voir la Découverte)',
+    notSent: (reason) => `Le redémarrage n’a pas été envoyé (${reason})`,
+    refused: (reason) => `Le routeur a refusé le redémarrage (${reason})`,
+    sentUnconfirmed: (reason) =>
+      `Le redémarrage a été envoyé, sans confirmation du routeur (${reason}) : vérifiez dans quelques minutes`,
+    unknownAction: 'Action de widget inconnue',
+  },
 };
+
+/**
+ * A refusal thrown to Gladys: the English message (one language, like the
+ * core's), the French one kept aside for the widget's toast. `args` may hold
+ * { en, fr } objects (a reason), each language takes its own.
+ */
+export function fail(key, args = [], options) {
+  const pick = (lang) => args.map((a) => (a && typeof a === 'object' ? a[lang] : a));
+  const text = (table, lang) => {
+    const entry = table[key];
+    return typeof entry === 'function' ? entry(...pick(lang)) : entry;
+  };
+  const err = new Error(text(T.errors, 'en'), options);
+  err.fr = text(T.errorsFr, 'fr');
+  return err;
+}

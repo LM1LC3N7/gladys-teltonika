@@ -20,7 +20,11 @@ the notes of the version's GitHub Release.
   A Reboot button appears only when "Allow rebooting the router" is on,
   asks for a confirmation, and goes through the checks of the router's
   Reboot button. The widget is pulled again when what it shows changes, at
-  most once every 10 s. No change of SDK (0.15) nor of the Gladys version
+  most once every 10 s (with a margin). Right after a reboot is sent, the
+  widget shows "Reboot sent" and nothing of the last reading until a
+  reading begun after it works. Refusals of its Reboot button are shown in
+  English and French. Anyone who sees the widget can press its Reboot
+  button when the option is on (said in the docs). No change of SDK (0.15) nor of the Gladys version
   needed (5.1.0 already shows widgets of integrations).
 
 ### Fixed

@@ -54,9 +54,9 @@ import {
   parseExternalId,
   routerIds,
 } from './devices.js';
-import { T, reasonOf } from './i18n.js';
+import { T, fail, reasonOf, withoutRetry } from './i18n.js';
 import { Store } from './store.js';
-import { buildWidgetContent } from './widget.js';
+import { buildWidgetContent, rateValue, signalText } from './widget.js';
 import { TeltonikaClient } from './teltonika/client.js';
 import { CODES, isCredentialsRefused } from './teltonika/errors.js';
 import { httpRequest } from './teltonika/http.js';
@@ -135,6 +135,15 @@ export class TeltonikaApp {
     this.widgetSeen = null;
     this.nudgedAt = null;
     this.nudgeHandle = null;
+    /** Set at stop(): a run() still in flight plans no nudge. */
+    this.stopped = false;
+    /**
+     * A reboot sent and no reading begun after it has worked yet: the widget
+     * shows nothing of the last reading (the router is restarting). Until
+     * then (ms); `rebootSeq` tells a reading begun before the reboot.
+     */
+    this.rebootPendingUntil = 0;
+    this.rebootSeq = 0;
     this.reset();
   }
 
@@ -228,8 +237,11 @@ export class TeltonikaApp {
     this.generation += 1;
     this.halt();
     this.dropClient();
+    this.stopped = true;
     if (this.nudgeHandle) this.timers.clearTimeout(this.nudgeHandle);
     this.nudgeHandle = null;
+    // A change whose nudge was cancelled is sent again after a restart.
+    this.widgetSeen = null;
   }
 
   /** Clear every timer; the runs still in flight will not schedule again. */
@@ -247,6 +259,7 @@ export class TeltonikaApp {
   async run(rawConfig, { force = false } = {}) {
     this.halt();
     this.dropClient();
+    this.stopped = false;
     const generation = ++this.generation;
     this.rawConfig = rawConfig ?? {};
     const config = normalizeConfig(rawConfig);
@@ -259,6 +272,8 @@ export class TeltonikaApp {
     this.lastStatus = null;
     if (this.known && this.known.key !== this.knownKey(config)) this.known = null;
     await this.store.load();
+    // Stopped or restarted meanwhile: that call owns the status.
+    if (generation !== this.generation) return;
 
     if (config.hostError) {
       await this.stopWith(
@@ -603,6 +618,7 @@ export class TeltonikaApp {
   async read({ publish }) {
     const client = this.client;
     const generation = this.generation;
+    const rebootSeq = this.rebootSeq;
     if (!client) return;
     // A reading that ends after a restart publishes nothing, fires nothing and
     // sets no status: it is not the reading of the current configuration.
@@ -625,6 +641,8 @@ export class TeltonikaApp {
     }
     this.pausedUntil = 0;
     this.rebootingUntil = 0;
+    // Only a reading begun after the last reboot shows the router again.
+    if (rebootSeq === this.rebootSeq) this.rebootPendingUntil = 0;
 
     const modems = list.map((modem) => {
       const { down, up } = this.rates(modem, at);
@@ -854,14 +872,14 @@ export class TeltonikaApp {
     // The deadlines count from the arrival of the command, before any wait.
     const received = this.now();
     const target = parseExternalId(this.gladys, feature?.external_id);
-    if (!target || target.feature === null) throw new Error(T.errors.unknownDevice);
+    if (!target || target.feature === null) throw fail('unknownDevice');
     if (target.kind !== 'router' || target.feature !== FEATURES.REBOOT) {
-      throw new Error(T.errors.readOnly);
+      throw fail('readOnly');
     }
     // Strictly the value of a button: never a 0, a true or an empty text.
-    if (value !== PRESSED && value !== String(PRESSED)) throw new Error(T.errors.badValue);
-    if (!this.config.allowReboot) throw new Error(T.errors.rebootDisabled);
-    if (this.inFlight) throw new Error(T.errors.stillRunning);
+    if (value !== PRESSED && value !== String(PRESSED)) throw fail('badValue');
+    if (!this.config.allowReboot) throw fail('rebootDisabled');
+    if (this.inFlight) throw fail('stillRunning');
     const promise = this.reboot(received);
     this.inFlight = promise;
     try {
@@ -873,16 +891,16 @@ export class TeltonikaApp {
 
   /** The checks of the reboot, on the latest configuration: before the read and right before sending. */
   checkReboot(generation, client) {
-    if (!this.config.allowReboot) throw new Error(T.errors.rebootDisabled);
+    if (!this.config.allowReboot) throw fail('rebootDisabled');
     if (generation !== this.generation || client !== this.client || !client || !this.online) {
-      throw new Error(T.errors.notConnected);
+      throw fail('notConnected');
     }
-    if (this.paused()) throw new Error(T.errors.paused(this.pausedUntil - this.now()));
+    if (this.paused()) throw fail('paused', [this.pausedUntil - this.now()]);
     // A reboot "in the future" (a clock set back) counts as one now: at most
     // 10 min of cooldown, never none.
     if (this.lastRebootAt > this.now()) this.lastRebootAt = this.now();
     const ago = this.now() - this.lastRebootAt;
-    if (ago < COMMAND.COOLDOWN_MS) throw new Error(T.errors.cooldown(ago));
+    if (ago < COMMAND.COOLDOWN_MS) throw fail('cooldown', [ago]);
   }
 
   /**
@@ -920,16 +938,16 @@ export class TeltonikaApp {
     } catch (err) {
       this.followFailure(err, generation);
       if (err?.code === CODES.LATE || err?.code === CODES.TIMEOUT) {
-        throw new Error(T.errors.tooSlow, { cause: err });
+        throw fail('tooSlow', [], { cause: err });
       }
-      throw new Error(T.errors.unknownState(reasonOf(err).en), { cause: err });
+      throw fail('unknownState', [reasonOf(err)], { cause: err });
     }
     if (!known || !fresh.identity || fresh.identity !== known) {
-      throw new Error(T.errors.otherRouter);
+      throw fail('otherRouter');
     }
     // The option may have been turned off during the read: checked again.
     this.checkReboot(generation, client);
-    if (this.now() > sendBy) throw new Error(T.errors.tooSlow);
+    if (this.now() > sendBy) throw fail('tooSlow');
     this.logger.info('Reboot of the router requested from Gladys');
     try {
       await client.reboot({
@@ -940,33 +958,33 @@ export class TeltonikaApp {
         // the cooldown, and the deadline.
         beforeSend: () => {
           this.checkReboot(generation, client);
-          if (this.now() > sendBy) throw new Error(T.errors.tooSlow);
+          if (this.now() > sendBy) throw fail('tooSlow');
         },
       });
     } catch (err) {
       if (err?.beforeSend) throw err;
-      const reason = reasonOf(err).en;
+      const reason = reasonOf(err);
       this.logger.warn(
         `Reboot of the router: ${err?.name === 'RouterError' ? err.message : 'error'}`,
       );
       const cause = { cause: err };
       this.followFailure(err, generation);
-      if (err?.noSession) throw new Error(T.errors.noSession, cause);
-      if (err?.code === CODES.LATE) throw new Error(T.errors.tooSlow, cause);
-      if (err?.notSent) throw new Error(T.errors.notSent(reason), cause);
-      if (err?.status === 429) throw new Error(T.errors.refused(reason), cause);
+      if (err?.noSession) throw fail('noSession', [], cause);
+      if (err?.code === CODES.LATE) throw fail('tooSlow', [], cause);
+      if (err?.notSent) throw fail('notSent', [reason], cause);
+      if (err?.status === 429) throw fail('refused', [reason], cause);
       if (
         err?.code === CODES.ACCESS ||
         err?.code === CODES.API_ERROR ||
         err?.code === CODES.REDIRECT ||
         (err?.code === CODES.HTTP && err.status < 500)
       ) {
-        throw new Error(T.errors.refused(reason), cause);
+        throw fail('refused', [reason], cause);
       }
       // A 5xx, a silence, a broken answer after the request was written: it
       // may have reached the router.
       await this.rebooted();
-      throw new Error(T.errors.sentUnconfirmed(reason), cause);
+      throw fail('sentUnconfirmed', [reason], cause);
     }
     await this.rebooted();
   }
@@ -978,6 +996,15 @@ export class TeltonikaApp {
     // Kept before the ack, so that a restart right after keeps the cooldown.
     // The store never throws (a failed write keeps the value in memory).
     await this.store.set('meta', this.rebootKey(), String(this.lastRebootAt));
+    this.rebootSeq += 1;
+    this.rebootPendingUntil = this.now() + COMMAND.REBOOTING_MS;
+    // The core pulls the widget right after the action: already the new state.
+    this.widgetChanged();
+  }
+
+  /** A reboot sent, and no reading begun after it worked yet. */
+  rebootPending() {
+    return this.now() < this.rebootPendingUntil;
   }
 
   // --- The dashboard widget ---------------------------------------------------
@@ -999,9 +1026,16 @@ export class TeltonikaApp {
         if (!modem) return { modem: null, problem: 'missing' };
       }
     }
+    const picked = modem !== null;
     modem ??= list[0] ?? null;
     if (!modem) return { modem: null, problem: this.online ? 'none' : null };
-    return { modem, problem: null, index: list.indexOf(modem) + 1, count: list.length };
+    return {
+      modem,
+      problem: null,
+      chosen: picked,
+      index: list.indexOf(modem) + 1,
+      count: list.length,
+    };
   }
 
   /** What the widget shows of a modem: only the values of the last reading. */
@@ -1018,18 +1052,24 @@ export class TeltonikaApp {
     };
   }
 
+  /** The connection status as the widget shows it: without the retry countdown (it would stay frozen). */
+  widgetStatus() {
+    return this.lastStatus ? withoutRetry(JSON.parse(this.lastStatus)[1]) : null;
+  }
+
   /** onWidgetGet: built from memory, never a reading of the router. */
   widgetContent(settings, language) {
-    const { modem, problem, index, count } = this.widgetModem(settings);
-    const status = this.lastStatus ? JSON.parse(this.lastStatus)[1] : null;
+    const { modem, problem, chosen, index, count } = this.widgetModem(settings);
     return buildWidgetContent({
       language,
       ttlSeconds: this.config.pollSeconds,
       online: this.online,
-      status,
+      rebooting: this.rebootPending(),
+      status: this.widgetStatus(),
       allowReboot: this.config.allowReboot,
       modem: this.widgetView(modem),
       problem,
+      chosen,
       index,
       count,
     });
@@ -1041,23 +1081,47 @@ export class TeltonikaApp {
    * device: refused unless allowed, read again, checked right before sending.
    */
   async widgetAction(actionKey) {
-    if (actionKey !== WIDGET_ACTIONS.REBOOT) throw new Error(T.errors.unknownAction);
-    const reboot = { external_id: routerIds(this.gladys).feature(FEATURES.REBOOT) };
-    await this.setValue(null, reboot, PRESSED);
+    try {
+      if (actionKey !== WIDGET_ACTIONS.REBOOT) throw fail('unknownAction');
+      const reboot = { external_id: routerIds(this.gladys).feature(FEATURES.REBOOT) };
+      await this.setValue(null, reboot, PRESSED);
+    } catch (err) {
+      // The core's error toast is one text and the action gets no language:
+      // both, English first (the language of the core's errors).
+      throw new Error(err?.fr ? `${err.message} / ${err.fr}` : err?.message, { cause: err });
+    }
     return T.widget.rebootSent;
   }
 
-  /** What the widget shows, for every modem: a change asks Gladys to pull it again. */
+  /**
+   * What the widget shows, for every modem, as displayed (bars, rounded
+   * rates): a change asks Gladys to pull it again, a change it would not
+   * show does not.
+   */
   widgetKey() {
+    const rebooting = this.rebootPending();
+    const shown = this.online && !rebooting;
     return JSON.stringify([
-      this.online,
+      shown,
+      rebooting,
       this.config.allowReboot,
       this.config.pollSeconds,
-      this.online ? null : this.lastStatus,
-      [...this.modems.values()].map((m) => {
-        const v = this.widgetView(m);
-        return [m.id, v.name, v.operator, v.networkType, v.dataConnected, v.bars, v.down, v.up];
-      }),
+      shown ? null : this.widgetStatus(),
+      shown
+        ? [...this.modems.values()].map((m) => {
+            const v = this.widgetView(m);
+            return [
+              m.id,
+              v.name,
+              v.operator,
+              v.networkType,
+              v.dataConnected,
+              signalText(v.bars),
+              rateValue(v.down),
+              rateValue(v.up),
+            ];
+          })
+        : null,
     ]);
   }
 
@@ -1073,7 +1137,7 @@ export class TeltonikaApp {
    * within 10 s of the last nudge is sent at the end of those 10 s, once.
    */
   nudgeWidget() {
-    if (this.nudgeHandle) return;
+    if (this.nudgeHandle || this.stopped) return;
     const now = this.monotonic();
     const wait =
       this.nudgedAt === null

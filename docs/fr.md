@@ -111,13 +111,21 @@ Le widget montre :
 - un bouton **Redémarrer**, seulement quand **Autoriser le redémarrage du
   routeur** est activé. Gladys demande d'abord une confirmation, puis le
   redémarrage passe par les mêmes vérifications que le bouton Redémarrer de
-  l'appareil routeur (plus bas).
+  l'appareil routeur (plus bas). **Toute personne qui voit le widget peut
+  l'utiliser** : chaque compte dont le tableau de bord le contient, tableau
+  de bord partagé ou public compris (Gladys envoie l'action sans le nom de
+  l'utilisateur). N'activez l'option que si cela vous convient. Un refus
+  s'affiche en anglais et en français.
 
 Il n'utilise que ce que l'intégration lit déjà, au rythme du rafraîchissement
 choisi. Une valeur que le routeur ne donne pas, un débit avant deux lectures,
 ou toute valeur quand le routeur n'est pas lu s'affiche **inconnu**, jamais
-la dernière valeur. Gladys recharge le widget quand ce qu'il montre change,
-une fois toutes les 10 secondes au plus.
+la dernière valeur. Juste après l'envoi d'un redémarrage, le widget affiche
+**Redémarrage envoyé** (orange) et plus rien de la dernière lecture, jusqu'à
+ce qu'une lecture du routeur réussisse de nouveau. La raison affichée quand
+le routeur n'est pas lu ne reprend pas le délai avant le nouvel essai (voir
+le statut de l'intégration pour lui). Gladys recharge le widget quand ce
+qu'il montre change, une fois toutes les 10 secondes environ au plus.
 
 Le widget n'a pas besoin d'appareil ajouté depuis la Découverte : il lit
 l'intégration elle-même. Pour choisir un modem dans ses réglages, ajoutez ce

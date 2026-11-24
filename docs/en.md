@@ -100,13 +100,21 @@ The widget shows:
   (green) or not read (red), with the reason;
 - a **Reboot** button, only when **Allow rebooting the router** is on.
   Gladys asks for a confirmation first, then the reboot goes through the
-  very checks of the router's Reboot button (below).
+  very checks of the router's Reboot button (below). **Anyone who sees the
+  widget can press it**: every account whose dashboard holds it, a shared
+  or public dashboard included (Gladys sends the action without the name of
+  the user). Turn the option on only if that suits you. A refusal is shown
+  in English and French.
 
 It uses only what the integration already reads, at the chosen refresh. A
 value the router does not give, a rate before two readings, or anything
 while the router is not read is shown as **unknown**, never as the last
-value. Gladys pulls the widget again when what it shows changes, at most
-once every 10 seconds.
+value. Right after a reboot is sent, the widget shows **Reboot sent**
+(orange) and nothing of the last reading, until a reading of the router
+works again. The reason shown when the router is not read leaves out the
+retry countdown (see the status of the integration for it). Gladys pulls
+the widget again when what it shows changes, at most once every 10 seconds
+or so.
 
 The widget needs no device added from Discovery: it reads the integration
 itself. To choose a modem in its settings, add that modem from Discovery.

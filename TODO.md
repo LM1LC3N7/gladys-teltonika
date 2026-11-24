@@ -137,8 +137,14 @@ up to date at the end of every milestone.
   missing: nothing in its place). Values: operator, bars (our scale), network
   type as given, rates, data connected, router read or not; unknown when not
   online or not given. Content `ttl_seconds` = the poll interval; a nudge
-  (`requestWidgetRefresh`) when what it shows changes, at most one per 10 s
-  on a monotonic clock, the last change sent at the end of the 10 s. The
+  (`requestWidgetRefresh`) when what it shows (bars, rounded rates, the
+  status without its retry countdown) changes, at most one per 10.25 s on a
+  monotonic clock (the core drops a second one within 10 s of its own
+  reception), the last change sent at the end of the window; none after
+  `stop()`. After a reboot sent, nothing of the last reading until a
+  reading begun after it works (`rebootSeq`, at most 5 min). Refusals
+  thrown with `fail()` carry a French text, joined to the English one in the
+  widget's toast (the action gets no language). The
   Reboot button only with `allow_reboot`, `confirm: true`, and through
   `setValue` (every check of the reboot button). SDK 0.15.0 and Gladys
   > = 5.1.0 kept: both already have widgets and `confirm`.

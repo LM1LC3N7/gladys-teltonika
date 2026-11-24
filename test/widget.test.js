@@ -6,6 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateWidgetContent } from '@gladysassistant/integration-sdk';
+import { INTERVALS } from '../src/constants.js';
+import { withoutRetry } from '../src/i18n.js';
 import { buildWidgetContent, rateValue, signalText } from '../src/widget.js';
 
 const MODEM = {
@@ -41,6 +43,8 @@ test('rates: kbit/s below 1000, Mbit/s above; unknown is null, never 0', () => {
   assert.deepEqual(rateValue(0), { value: 0, unit: 'kbit/s' });
   assert.deepEqual(rateValue(512.4), { value: 512, unit: 'kbit/s' });
   assert.deepEqual(rateValue(25_400), { value: 25.4, unit: 'Mbit/s' });
+  assert.deepEqual(rateValue(999.4), { value: 999, unit: 'kbit/s' });
+  assert.deepEqual(rateValue(999.6), { value: 1, unit: 'Mbit/s' }, 'never "1000 kbit/s"');
   for (const bad of [null, undefined, -1, NaN, Infinity, '12']) assert.equal(rateValue(bad), null);
 });
 
@@ -109,4 +113,46 @@ test('signal colors: red at 0 or 1 bar, orange at 2, green above, grey unknown',
     'success',
     'neutral',
   ]);
+});
+
+test('a reboot sent: nothing of the modem, the router in orange, the button kept', () => {
+  const content = buildWidgetContent(view({ rebooting: true, allowReboot: true }));
+  assert.deepEqual(validateWidgetContent(content), []);
+  assert.ok(!JSON.stringify(content).includes('Orange F'));
+  const status = content.components.find((c) => c.type === 'status').items;
+  assert.deepEqual(status[1].value, 'Reboot sent');
+  assert.deepEqual(status[1].color, 'warning');
+  assert.equal(content.components.filter((c) => c.type === 'button').length, 1);
+});
+
+test('the modem hint only when the modem was not chosen', () => {
+  const caption = (chosen) =>
+    buildWidgetContent(view({ count: 2, index: 2, chosen })).components.find(
+      (c) => c.variant === 'caption',
+    ).text;
+  assert.match(caption(false), /choose it in the widget settings/);
+  assert.equal(caption(true), 'Modem 2/2: Internal modem');
+});
+
+test('the status in the widget loses its retry countdown, nothing else', () => {
+  assert.deepEqual(
+    withoutRetry({
+      en: 'No answer. Retried in 5 min.',
+      fr: 'Pas de réponse. Nouvel essai dans 5 min.',
+    }),
+    { en: 'No answer.', fr: 'Pas de réponse.' },
+  );
+  assert.deepEqual(
+    withoutRetry({
+      en: 'No answer: no connection — Retried in 2 min.',
+      fr: 'Pas de réponse : pas de connexion — Nouvel essai dans 2 min.',
+    }),
+    { en: 'No answer: no connection', fr: 'Pas de réponse : pas de connexion' },
+  );
+  assert.deepEqual(withoutRetry({ en: 'OK.', fr: 'OK.' }), { en: 'OK.', fr: 'OK.' });
+  assert.equal(withoutRetry(null), null);
+});
+
+test('the nudges keep a margin over the 10 s of Gladys', () => {
+  assert.ok(INTERVALS.WIDGET_NUDGE_MS > 10_000 && INTERVALS.WIDGET_NUDGE_MS <= 11_000);
 });
