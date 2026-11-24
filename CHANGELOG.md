@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-24
+
 ### Added
 
 - Dashboard widget "Mobile router" / "Routeur mobile" (asked on the forum):
@@ -77,6 +79,7 @@ the notes of the version's GitHub Release.
   reading chains; a reboot that joins a slow login of the loop is refused
   at its own deadline (2.5 s), not after the 15 s of the reading.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-teltonika/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-teltonika/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LM1LC3N7/gladys-teltonika/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/LM1LC3N7/gladys-teltonika/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-teltonika/releases/tag/v0.1.1
