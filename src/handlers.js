@@ -3,7 +3,7 @@
 // the tests run the exact wiring of the container.
 // -----------------------------------------------------------------------------
 
-import { ACTIONS } from './constants.js';
+import { ACTIONS, WIDGETS } from './constants.js';
 
 export function registerHandlers(gladys, app, logger) {
   // --- Discovery and device lifecycle --------------------------------------------
@@ -14,6 +14,13 @@ export function registerHandlers(gladys, app, logger) {
 
   // --- Commands: the reboot button only (refused unless allowed) -------------------
   gladys.onSetValue((device, feature, value) => app.setValue(device, feature, value));
+
+  // --- Dashboard widget "Mobile router": built from memory; its Reboot
+  // button takes the path of the reboot button (refused unless allowed).
+  gladys.onWidgetGet(WIDGETS.ROUTER, ({ settings, language }) =>
+    app.widgetContent(settings, language),
+  );
+  gladys.onWidgetAction(WIDGETS.ROUTER, (actionKey) => app.widgetAction(actionKey));
 
   // --- Configuration screen button --------------------------------------------------
   gladys.onAction(ACTIONS.TEST, () => app.testConnection());

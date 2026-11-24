@@ -18,8 +18,8 @@
       "type": "section",
       "label": { "en": "How it works", "fr": "Fonctionnement" },
       "description": {
-        "en": "Gladys reads a Teltonika router (RUTX, RUT, RUTM, TRB series, RutOS 7 or later) through its local HTTP API, with an account of the router. Each modem becomes a device: mobile data connected, signal (bars, RSSI, RSRP, RSRQ, SINR), operator, network type, band, SIM card, temperature, download and upload rates, data received and sent. The router gives its firmware and a Reboot button, off unless you allow it below. Scene triggers: mobile data lost, mobile data back. The IMEI, IMSI, ICCID, serial and phone numbers are never read into Gladys. Unofficial integration, not affiliated with Teltonika.",
-        "fr": "Gladys lit un routeur Teltonika (séries RUTX, RUT, RUTM, TRB, RutOS 7 ou plus récent) par son API HTTP locale, avec un compte du routeur. Chaque modem devient un appareil : données mobiles connectées, signal (barres, RSSI, RSRP, RSRQ, SINR), opérateur, type de réseau, bande, carte SIM, température, débits descendant et montant, données reçues et envoyées. Le routeur donne son firmware et un bouton Redémarrer, inactif tant que vous ne l'autorisez pas plus bas. Déclencheurs de scène : données mobiles perdues, données mobiles revenues. L'IMEI, l'IMSI, l'ICCID, les numéros de série et de téléphone ne sont jamais repris dans Gladys. Intégration non officielle, sans lien avec Teltonika."
+        "en": "Gladys reads a Teltonika router (RUTX, RUT, RUTM, TRB series, RutOS 7 or later) through its local HTTP API, with an account of the router. Each modem becomes a device: mobile data connected, signal (bars, RSSI, RSRP, RSRQ, SINR), operator, network type, band, SIM card, temperature, download and upload rates, data received and sent. The router gives its firmware and a Reboot button, off unless you allow it below. Scene triggers: mobile data lost, mobile data back. Dashboard widget: Mobile router (signal bars, operator, network, data connection, rates). The IMEI, IMSI, ICCID, serial and phone numbers are never read into Gladys. Unofficial integration, not affiliated with Teltonika.",
+        "fr": "Gladys lit un routeur Teltonika (séries RUTX, RUT, RUTM, TRB, RutOS 7 ou plus récent) par son API HTTP locale, avec un compte du routeur. Chaque modem devient un appareil : données mobiles connectées, signal (barres, RSSI, RSRP, RSRQ, SINR), opérateur, type de réseau, bande, carte SIM, température, débits descendant et montant, données reçues et envoyées. Le routeur donne son firmware et un bouton Redémarrer, inactif tant que vous ne l'autorisez pas plus bas. Déclencheurs de scène : données mobiles perdues, données mobiles revenues. Widget de tableau de bord : Routeur mobile (barres de signal, opérateur, réseau, connexion de données, débits). L'IMEI, l'IMSI, l'ICCID, les numéros de série et de téléphone ne sont jamais repris dans Gladys. Intégration non officielle, sans lien avec Teltonika."
       },
       "links": [
         {
@@ -118,8 +118,8 @@
       "type": "boolean",
       "label": { "en": "Allow rebooting the router", "fr": "Autoriser le redémarrage du routeur" },
       "description": {
-        "en": "Off by default. On: the Reboot button of the router device works (the router is read again first, and at most one reboot every 10 minutes). Off: the button refuses.",
-        "fr": "Désactivé par défaut. Activé : le bouton Redémarrer de l'appareil routeur fonctionne (le routeur est relu d'abord, et un redémarrage toutes les 10 minutes au plus). Désactivé : le bouton refuse."
+        "en": "Off by default. On: the Reboot button of the router device and of the Mobile router widget works (the router is read again first, and at most one reboot every 10 minutes). Off: the button refuses.",
+        "fr": "Désactivé par défaut. Activé : le bouton Redémarrer de l'appareil routeur et du widget Routeur mobile fonctionne (le routeur est relu d'abord, et un redémarrage toutes les 10 minutes au plus). Désactivé : le bouton refuse."
       },
       "required": false,
       "default": false
@@ -134,6 +134,31 @@
         "fr": "Se connecte et lit les modems, de nouveau seulement quand la dernière lecture est plus ancienne que le rafraîchissement ; après une erreur, il donne le statut jusqu'au prochain essai. Enregistrer la configuration relit tout de suite et réessaie des identifiants refusés."
       },
       "timeout_seconds": 30
+    }
+  ],
+  "widgets": [
+    {
+      "key": "mobile_router",
+      "label": { "en": "Mobile router", "fr": "Routeur mobile" },
+      "description": {
+        "en": "Signal bars, operator, network type, data connection and rates of a modem.",
+        "fr": "Barres de signal, opérateur, réseau, connexion de données et débits d'un modem."
+      },
+      "icon": "radio",
+      "settings": [
+        {
+          "key": "device",
+          "type": "select",
+          "source": "devices",
+          "required": false,
+          "label": { "en": "Modem (empty: the first one)", "fr": "Modem (vide : le premier)" },
+          "description": {
+            "en": "The modem device of the router to show. Empty, or the router itself: the first modem the router lists.",
+            "fr": "L'appareil modem du routeur à afficher. Vide, ou le routeur lui-même : le premier modem listé par le routeur."
+          }
+        }
+      ],
+      "action_timeout_seconds": 15
     }
   ],
   "scene_triggers": [

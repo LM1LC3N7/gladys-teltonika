@@ -11,6 +11,9 @@ through the local HTTP API of the router.
 - One router device: **firmware**, and a **Reboot** button, off unless
   "Allow rebooting the router" is on.
 - Scene triggers: **Mobile data lost**, **Mobile data back**.
+- Dashboard widget **Mobile router**: signal bars, operator, network type,
+  data connection, rates, and the Reboot button when allowed (with a
+  confirmation).
 
 **Never tested with a real router**: ported from
 [teltasync](https://codeberg.org/dmho/teltasync) (Apache-2.0) and tested

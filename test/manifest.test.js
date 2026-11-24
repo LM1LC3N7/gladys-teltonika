@@ -8,7 +8,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createFakeGladys } from '@gladysassistant/integration-sdk/testing';
 import { DEFAULTS } from '../src/config.js';
-import { ACTIONS, FEATURES, POLL_INTERVALS, PROTOCOLS, SCENE_TRIGGERS } from '../src/constants.js';
+import {
+  ACTIONS,
+  FEATURES,
+  POLL_INTERVALS,
+  PROTOCOLS,
+  SCENE_TRIGGERS,
+  WIDGETS,
+} from '../src/constants.js';
 import { buildModemDevice, buildRouterDevice } from '../src/devices.js';
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -140,7 +147,24 @@ test('the keys of the manifest are the keys of the code, all registered', () => 
   }
   assert.ok(manifest.actions.every((a) => a.timeout_seconds >= 5 && a.timeout_seconds <= 120));
   assert.equal(manifest.scene_actions, undefined, 'no scene action');
-  assert.equal(manifest.widgets, undefined, 'no widget in v1');
+  // One widget, its key the code's, registered for content and action; a
+  // modem picked from the devices (never a free text), no secret setting.
+  assert.deepEqual(keys(manifest.widgets), Object.values(WIDGETS));
+  for (const name of Object.keys(WIDGETS)) {
+    assert.ok(handlers.includes(`onWidgetGet(WIDGETS.${name}`), name);
+    assert.ok(handlers.includes(`onWidgetAction(WIDGETS.${name}`), name);
+  }
+  for (const widget of manifest.widgets) {
+    assert.match(widget.key, /^[a-z0-9_]{2,32}$/);
+    for (const text of Object.values(widget.label))
+      assert.ok(text.length >= 3 && text.length <= 30);
+    for (const text of Object.values(widget.description)) assert.ok(text.length <= 100);
+    assert.ok(widget.action_timeout_seconds >= 5 && widget.action_timeout_seconds <= 120);
+    assert.deepEqual(
+      widget.settings.map((f) => [f.key, f.type, f.source, f.required]),
+      [['device', 'select', 'devices', false]],
+    );
+  }
   assert.deepEqual(keys(manifest.scene_triggers).sort(), Object.values(SCENE_TRIGGERS).sort());
   for (const name of Object.keys(SCENE_TRIGGERS)) {
     assert.ok(app.includes(`SCENE_TRIGGERS.${name}`), `${name} is never fired`);

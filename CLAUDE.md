@@ -46,6 +46,7 @@ src/devices.js                    router and modem devices (pure), never fewer f
 src/config.js                     DEFAULTS (mirror the manifest) + normalization
 src/store.js                      /data: refusal HMAC, salt, certificate pins, pauses, last reboot
 src/budget.js                     sliding window of the states sent per minute
+src/widget.js                     the "Mobile router" dashboard widget content (pure)
 src/i18n.js                       statuses and messages (en / fr)
 gladys-assistant-integration.json manifest
 docs/en.md, docs/fr.md            user documentation, re-hosted by Gladys (mandatory)
@@ -63,6 +64,8 @@ test/                             node --test, fake Gladys (SDK) + fake router +
   unless `allow_reboot` is on; the router is read again (same identity) just
   before, the option checked again right before the request is written
   (`beforeSend`), never retried, 10 min between two (kept in `/data`).
+  The Reboot button of the widget is shown only with `allow_reboot`, asks
+  for the core's confirmation, and goes through `setValue` (no other path).
   Any new command needs Louis's decision, off by default, never a switch.
 - **Secrets and identifiers**: the password, the token, the IMEI, IMSI,
   ICCID, serial numbers, MAC addresses, cell ids and phone numbers are never

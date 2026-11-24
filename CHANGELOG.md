@@ -10,6 +10,19 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+### Added
+
+- Dashboard widget "Mobile router" / "Routeur mobile" (asked on the forum):
+  signal bars like a phone, operator, network type (4G / 5G), mobile data
+  connected (green) or not (red), router answering or not, download and
+  upload rates. One modem per widget, chosen in its settings (empty: the
+  first one). A value not known is shown as unknown, never the last one.
+  A Reboot button appears only when "Allow rebooting the router" is on,
+  asks for a confirmation, and goes through the checks of the router's
+  Reboot button. The widget is pulled again when what it shows changes, at
+  most once every 10 s. No change of SDK (0.15) nor of the Gladys version
+  needed (5.1.0 already shows widgets of integrations).
+
 ### Fixed
 
 - Test helper: certificate serial numbers are always valid DER (a test failed about once in 100 runs).

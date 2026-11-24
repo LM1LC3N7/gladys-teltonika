@@ -12,7 +12,9 @@ router. Handy for a second home, a camper van or a backup connection:
   **sent**;
 - the **router** becomes a device with its **firmware** and a **Reboot the
   router** button, inactive until you allow it;
-- two scene triggers: **Mobile data lost** and **Mobile data back**.
+- two scene triggers: **Mobile data lost** and **Mobile data back**;
+- a dashboard widget, **Mobile router**: signal bars, operator, network
+  type, data connection and rates of a modem at a glance.
 
 > **This integration has never been tested with a real router.** This first
 > version was ported from teltasync, the library Home Assistant uses, and
@@ -79,12 +81,43 @@ Only saving the configuration reads at once.
 - **SIM card**: the state of the card, or what it asks for (PIN, PUK).
 - A modem offline keeps its device, shown not connected.
 
+## The Mobile router widget
+
+On a dashboard, edit it, add a box and pick **Mobile router** (Teltonika).
+One modem per widget: choose it in the widget settings (**Modem**); left
+empty, or with the router chosen, the widget shows the first modem the
+router lists, and says which one when there are several. A modem the router
+no longer lists is never replaced by another one.
+
+The widget shows:
+
+- the **operator** as its title;
+- the **signal** in bars, like a phone (▮▮▮▯▯ for 3 of 5 bars; red at 0 or
+  1 bar, orange at 2, green above);
+- the **network type** as the router gives it (4G (LTE), 5G (NSA)…);
+- the **download** and **upload rates** (kbit/s, Mbit/s from 1000 kbit/s);
+- **Mobile data**: connected (green) or not (red); **Router**: answers
+  (green) or not read (red), with the reason;
+- a **Reboot** button, only when **Allow rebooting the router** is on.
+  Gladys asks for a confirmation first, then the reboot goes through the
+  very checks of the router's Reboot button (below).
+
+It uses only what the integration already reads, at the chosen refresh. A
+value the router does not give, a rate before two readings, or anything
+while the router is not read is shown as **unknown**, never as the last
+value. Gladys pulls the widget again when what it shows changes, at most
+once every 10 seconds.
+
+The widget needs no device added from Discovery: it reads the integration
+itself. To choose a modem in its settings, add that modem from Discovery.
+
 ## Rebooting the router
 
 A reboot cuts the Internet of everything behind the router for a minute or
 two, Gladys included if it goes through it. Therefore:
 
-- the button refuses until **Allow rebooting the router** is on;
+- the button (of the router device or of the widget) refuses until
+  **Allow rebooting the router** is on;
 - it is a button, never a switch: a "turn everything off" of a voice
   assistant or a scene never reaches it;
 - before sending, Gladys reads the router again and checks it is the same

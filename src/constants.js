@@ -8,6 +8,14 @@ export const ACTIONS = Object.freeze({
   TEST: 'test_connection',
 });
 
+/** The dashboard widget, and the one action of its button. */
+export const WIDGETS = Object.freeze({
+  ROUTER: 'mobile_router',
+});
+export const WIDGET_ACTIONS = Object.freeze({
+  REBOOT: 'reboot',
+});
+
 export const SCENE_TRIGGERS = Object.freeze({
   DATA_LOST: 'mobile_data_lost',
   DATA_RESTORED: 'mobile_data_restored',
@@ -87,6 +95,8 @@ export const INTERVALS = Object.freeze({
   TOKEN_DEFAULT_S: 299,
   /** A rate needs two readings at least this close (else it is not shown). */
   RATE_MAX_GAP_FACTOR: 3,
+  /** Gladys takes one widget refresh nudge per 10 s per widget: never more often. */
+  WIDGET_NUDGE_MS: 10_000,
 });
 
 /** The reboot command: deadlines counted from its arrival (Gladys acks within 5 s). */

@@ -14,7 +14,10 @@ une connexion de secours :
 - le **routeur** devient un appareil avec son **firmware** et un bouton
   **Redémarrer le routeur**, inactif tant que vous ne l'autorisez pas ;
 - deux déclencheurs de scène : **Données mobiles perdues** et **Données
-  mobiles revenues**.
+  mobiles revenues** ;
+- un widget de tableau de bord, **Routeur mobile** : barres de signal,
+  opérateur, type de réseau, connexion de données et débits d'un modem en un
+  coup d'œil.
 
 > **Cette intégration n'a jamais été testée avec un vrai routeur.** Cette
 > première version a été portée depuis teltasync, la bibliothèque qu'utilise
@@ -86,13 +89,47 @@ configuration relit tout de suite.
 - **Carte SIM** : l'état de la carte, ou ce qu'elle demande (PIN, PUK).
 - Un modem hors ligne garde son appareil, montré non connecté.
 
+## Le widget Routeur mobile
+
+Sur un tableau de bord, passez en édition, ajoutez une boîte et choisissez
+**Routeur mobile** (Teltonika). Un modem par widget : choisissez-le dans les
+réglages du widget (**Modem**) ; laissé vide, ou avec le routeur choisi, le
+widget montre le premier modem listé par le routeur, et dit lequel quand il
+y en a plusieurs. Un modem que le routeur ne liste plus n'est jamais
+remplacé par un autre.
+
+Le widget montre :
+
+- l'**opérateur** en titre ;
+- le **signal** en barres, comme sur un téléphone (▮▮▮▯▯ pour 3 barres sur
+  5 ; rouge à 0 ou 1 barre, orange à 2, vert au-delà) ;
+- le **type de réseau** tel que le routeur le donne (4G (LTE), 5G (NSA)…) ;
+- les **débits** descendant et montant (kbit/s, Mbit/s à partir de
+  1000 kbit/s) ;
+- **Données mobiles** : connectées (vert) ou non (rouge) ; **Routeur** :
+  répond (vert) ou non lu (rouge), avec la raison ;
+- un bouton **Redémarrer**, seulement quand **Autoriser le redémarrage du
+  routeur** est activé. Gladys demande d'abord une confirmation, puis le
+  redémarrage passe par les mêmes vérifications que le bouton Redémarrer de
+  l'appareil routeur (plus bas).
+
+Il n'utilise que ce que l'intégration lit déjà, au rythme du rafraîchissement
+choisi. Une valeur que le routeur ne donne pas, un débit avant deux lectures,
+ou toute valeur quand le routeur n'est pas lu s'affiche **inconnu**, jamais
+la dernière valeur. Gladys recharge le widget quand ce qu'il montre change,
+une fois toutes les 10 secondes au plus.
+
+Le widget n'a pas besoin d'appareil ajouté depuis la Découverte : il lit
+l'intégration elle-même. Pour choisir un modem dans ses réglages, ajoutez ce
+modem depuis la Découverte.
+
 ## Redémarrage du routeur
 
 Un redémarrage coupe Internet pour tout ce qui passe par le routeur pendant
 une ou deux minutes, Gladys compris s'il passe par lui. C'est pourquoi :
 
-- le bouton refuse tant que **Autoriser le redémarrage du routeur** n'est pas
-  activé ;
+- le bouton (de l'appareil routeur ou du widget) refuse tant que
+  **Autoriser le redémarrage du routeur** n'est pas activé ;
 - c'est un bouton, jamais un interrupteur : un « éteins tout » d'un
   assistant vocal ou d'une scène ne l'atteint pas ;
 - avant d'envoyer, Gladys relit le routeur et vérifie que c'est le même

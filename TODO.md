@@ -130,7 +130,18 @@ up to date at the end of every milestone.
   an hour.
 - **Caps**: 8 modems, answers 1 MiB, texts 64 characters, 15 s per request,
   250 states per minute.
-- **No dashboard widget** in v1.
+- **Dashboard widget "Mobile router"** (next minor, asked by prohand on the
+  forum, topic 11665): built from memory (the last reading), never a reading
+  of its own; one modem per widget (`settings.device`, a device of this
+  router; empty or the router: the first modem listed; a chosen modem
+  missing: nothing in its place). Values: operator, bars (our scale), network
+  type as given, rates, data connected, router read or not; unknown when not
+  online or not given. Content `ttl_seconds` = the poll interval; a nudge
+  (`requestWidgetRefresh`) when what it shows changes, at most one per 10 s
+  on a monotonic clock, the last change sent at the end of the 10 s. The
+  Reboot button only with `allow_reboot`, `confirm: true`, and through
+  `setValue` (every check of the reboot button). SDK 0.15.0 and Gladys
+  > = 5.1.0 kept: both already have widgets and `confirm`.
 
 ## Next
 
@@ -141,4 +152,5 @@ up to date at the end of every milestone.
 - Connected devices and presence: the DHCP leases (or wireless clients)
   endpoint of RutOS, once checked on the documentation of a firmware.
 - Data usage per SIM (RutOS keeps daily / monthly counters).
-- A dashboard widget (signal, operator, data).
+- The widget on a real Gladys dashboard (only the fake Gladys of the SDK and
+  its content validator checked it).

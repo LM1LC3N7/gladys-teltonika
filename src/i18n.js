@@ -179,6 +179,12 @@ export const T = {
         fr: 'Ajoutez le routeur et ses modems depuis l’onglet Découverte.',
       }),
   },
+  widget: {
+    rebootSent: {
+      en: 'Reboot sent: the router restarts (about a minute without Internet).',
+      fr: 'Redémarrage envoyé : le routeur redémarre (environ une minute sans Internet).',
+    },
+  },
   errors: {
     readOnly: 'This feature only reads the router: nothing can be changed from it',
     unknownDevice: 'This device is not part of this router',
@@ -202,6 +208,7 @@ export const T = {
     refused: (reason) => `The router refused the reboot (${reason})`,
     sentUnconfirmed: (reason) =>
       `The reboot was sent, without confirmation from the router (${reason}): check it in a few minutes`,
+    unknownAction: 'Unknown widget action',
     testTooLong:
       'The router has not answered yet: see the connection status in a moment (nothing else to do)',
   },

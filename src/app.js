@@ -12,6 +12,9 @@
 //                  on: the router read again first (the same one?), the
 //                  option checked again right before sending, one request
 //                  never retried, at most one every 10 min
+//   widget         the "Mobile router" dashboard widget (src/widget.js): one
+//                  modem from the last reading, pulled by Gladys; a nudge
+//                  when what it shows changes, one per 10 s at most
 //   failures       credentials refused stop everything until the
 //                  configuration is saved (the router may lock an account
 //                  after a few failures); another HTTPS certificate than the
@@ -40,6 +43,8 @@ import {
   SCENE_TRIGGERS,
   SIGNAL_BARS,
   STORE_FILE,
+  WIDGET_ACTIONS,
+  WIDGETS,
 } from './constants.js';
 import {
   buildModemDevice,
@@ -51,6 +56,7 @@ import {
 } from './devices.js';
 import { T, reasonOf } from './i18n.js';
 import { Store } from './store.js';
+import { buildWidgetContent } from './widget.js';
 import { TeltonikaClient } from './teltonika/client.js';
 import { CODES, isCredentialsRefused } from './teltonika/errors.js';
 import { httpRequest } from './teltonika/http.js';
@@ -81,6 +87,7 @@ export class TeltonikaApp {
    * @param {Function} [options.request] the HTTP transport (tests inject a fake router)
    * @param {string} [options.dataDir] the writable volume
    * @param {() => number} [options.now]
+   * @param {() => number} [options.monotonic] a clock that never goes back (the widget nudges)
    * @param {{ setTimeout: Function, clearTimeout: Function }} [options.timers]
    */
   constructor({
@@ -89,12 +96,14 @@ export class TeltonikaApp {
     request = httpRequest,
     dataDir = process.env.DATA_DIR ?? '/data',
     now = Date.now,
+    monotonic = () => performance.now(),
     timers = globalThis,
   }) {
     this.gladys = gladys;
     this.logger = logger;
     this.request = request;
     this.now = now;
+    this.monotonic = monotonic;
     this.timers = timers;
     this.store = new Store({ filePath: join(dataDir, STORE_FILE), logger });
     this.budget = new Budget({ perMinute: LIMITS.STATES_PER_MINUTE, now });
@@ -122,6 +131,10 @@ export class TeltonikaApp {
     this.pauseMemory = null;
     /** Until then, a failing reading is the reboot that was sent. */
     this.rebootingUntil = 0;
+    /** What the widget showed at the last nudge, when it was sent (monotonic), the one planned. */
+    this.widgetSeen = null;
+    this.nudgedAt = null;
+    this.nudgeHandle = null;
     this.reset();
   }
 
@@ -215,6 +228,8 @@ export class TeltonikaApp {
     this.generation += 1;
     this.halt();
     this.dropClient();
+    if (this.nudgeHandle) this.timers.clearTimeout(this.nudgeHandle);
+    this.nudgeHandle = null;
   }
 
   /** Clear every timer; the runs still in flight will not schedule again. */
@@ -549,14 +564,17 @@ export class TeltonikaApp {
     return this.now() < this.pausedUntil;
   }
 
+  /** Every path that ends a reading, a failure or a start sets the status: the widget follows it. */
   async setStatus(connected, message) {
     const key = JSON.stringify([connected, message]);
-    if (key === this.lastStatus) return;
-    this.lastStatus = key;
-    await this.gladys.setConnectionStatus(connected, message).catch((err) => {
-      this.lastStatus = null;
-      this.logger.warn(`Connection status not sent: ${err.message}`);
-    });
+    if (key !== this.lastStatus) {
+      this.lastStatus = key;
+      await this.gladys.setConnectionStatus(connected, message).catch((err) => {
+        this.lastStatus = null;
+        this.logger.warn(`Connection status not sent: ${err.message}`);
+      });
+    }
+    this.widgetChanged();
   }
 
   // --- Reading -----------------------------------------------------------------
@@ -960,6 +978,120 @@ export class TeltonikaApp {
     // Kept before the ack, so that a restart right after keeps the cooldown.
     // The store never throws (a failed write keeps the value in memory).
     await this.store.set('meta', this.rebootKey(), String(this.lastRebootAt));
+  }
+
+  // --- The dashboard widget ---------------------------------------------------
+
+  /**
+   * The modem a widget shows: the one chosen in its settings (a modem device
+   * of this router), else the first of the last reading. Never another one
+   * in place of a chosen modem that is missing.
+   */
+  widgetModem(settings) {
+    const list = [...this.modems.values()];
+    const chosen = settings?.device;
+    let modem = null;
+    if (typeof chosen === 'string' && chosen) {
+      const target = parseExternalId(this.gladys, chosen);
+      if (!target || target.feature !== null) return { modem: null, problem: 'other' };
+      if (target.kind === 'modem') {
+        modem = this.modems.get(target.id) ?? null;
+        if (!modem) return { modem: null, problem: 'missing' };
+      }
+    }
+    modem ??= list[0] ?? null;
+    if (!modem) return { modem: null, problem: this.online ? 'none' : null };
+    return { modem, problem: null, index: list.indexOf(modem) + 1, count: list.length };
+  }
+
+  /** What the widget shows of a modem: only the values of the last reading. */
+  widgetView(modem) {
+    if (!modem) return null;
+    return {
+      name: modem.name ?? null,
+      operator: modem.operator ?? null,
+      networkType: modem.networkType ?? null,
+      dataConnected: modem.dataConnected ?? null,
+      bars: signalBars(modem.rssi),
+      down: modem.down ?? null,
+      up: modem.up ?? null,
+    };
+  }
+
+  /** onWidgetGet: built from memory, never a reading of the router. */
+  widgetContent(settings, language) {
+    const { modem, problem, index, count } = this.widgetModem(settings);
+    const status = this.lastStatus ? JSON.parse(this.lastStatus)[1] : null;
+    return buildWidgetContent({
+      language,
+      ttlSeconds: this.config.pollSeconds,
+      online: this.online,
+      status,
+      allowReboot: this.config.allowReboot,
+      modem: this.widgetView(modem),
+      problem,
+      index,
+      count,
+    });
+  }
+
+  /**
+   * onWidgetAction: the Reboot button of the widget (the core asked for a
+   * confirmation) takes the very path of the reboot button of the router
+   * device: refused unless allowed, read again, checked right before sending.
+   */
+  async widgetAction(actionKey) {
+    if (actionKey !== WIDGET_ACTIONS.REBOOT) throw new Error(T.errors.unknownAction);
+    const reboot = { external_id: routerIds(this.gladys).feature(FEATURES.REBOOT) };
+    await this.setValue(null, reboot, PRESSED);
+    return T.widget.rebootSent;
+  }
+
+  /** What the widget shows, for every modem: a change asks Gladys to pull it again. */
+  widgetKey() {
+    return JSON.stringify([
+      this.online,
+      this.config.allowReboot,
+      this.config.pollSeconds,
+      this.online ? null : this.lastStatus,
+      [...this.modems.values()].map((m) => {
+        const v = this.widgetView(m);
+        return [m.id, v.name, v.operator, v.networkType, v.dataConnected, v.bars, v.down, v.up];
+      }),
+    ]);
+  }
+
+  widgetChanged() {
+    const key = this.widgetKey();
+    if (key === this.widgetSeen) return;
+    this.widgetSeen = key;
+    this.nudgeWidget();
+  }
+
+  /**
+   * "Pull the widget again": Gladys takes one per 10 s per widget. A change
+   * within 10 s of the last nudge is sent at the end of those 10 s, once.
+   */
+  nudgeWidget() {
+    if (this.nudgeHandle) return;
+    const now = this.monotonic();
+    const wait =
+      this.nudgedAt === null
+        ? 0
+        : this.nudgedAt + INTERVALS.WIDGET_NUDGE_MS - Math.max(now, this.nudgedAt);
+    if (wait > 0) {
+      this.nudgeHandle = this.timers.setTimeout(() => {
+        this.nudgeHandle = null;
+        this.nudgeWidget();
+      }, wait);
+      return;
+    }
+    this.nudgedAt = now;
+    try {
+      this.gladys.requestWidgetRefresh(WIDGETS.ROUTER);
+    } catch (err) {
+      this.logger.debug(`Widget refresh not sent: ${err?.message}`);
+    }
   }
 
   // --- Configuration button --------------------------------------------------
