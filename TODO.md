@@ -160,3 +160,11 @@ up to date at the end of every milestone.
 - Data usage per SIM (RutOS keeps daily / monthly counters).
 - The widget on a real Gladys dashboard (only the fake Gladys of the SDK and
   its content validator checked it).
+- Widget review r2 minors (`_lots/hors-lot/teltonika-widget-r2.md`): a read
+  begun right after the reboot, router still up, ends "Reboot sent" early
+  (n1); "Reboot sent" masks a refused-credentials or certificate status for
+  up to 5 min (n2); the bilingual toasts `otherRouter`, `unknownState`,
+  `sentUnconfirmed` pass the core's 200-character limit, the French tail is
+  cut (n3); the pending state survives a change of router until the first
+  read (n4); a late `setStatus` after `stop()` can set `widgetSeen` (n5).
+- Widget: the time of the last reading (r1 m4), Louis's call.
